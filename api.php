@@ -6,9 +6,11 @@ header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('X-Content-Type-Options: nosniff');
 
-define('CACHE_TTL',     7200);    // 2 hours
-define('FETCH_TIMEOUT', 30);      // seconds
-define('MAX_BYTES',     2097152); // 2 MB
+load_env_file(__DIR__ . '/.env');
+
+define('APP_ENV',       env_string('APP_ENV', 'development')); // development|production
+define('CACHE_TTL',     env_int('CACHE_TTL', 7200, 0, 604800));
+define('FETCH_TIMEOUT', env_int('FETCH_TIMEOUT', 60, 1, 300));
 define('OAI_NS',        'http://www.openarchives.org/OAI/2.0/');
 define('DC_NS',         'http://purl.org/dc/elements/1.1/');
 
@@ -55,7 +57,8 @@ switch ($action) {
 $oai_url = $base_url . '?' . http_build_query($params);
 
 // ── Cache lookup ──────────────────────────────────────────────────────────────
-$nocache    = !empty($_GET['nocache']);
+$nocache_requested = !empty($_GET['nocache']);
+$nocache    = $nocache_requested && APP_ENV !== 'production';
 $db         = null;
 $cache_key  = md5($oai_url);
 try {
@@ -144,7 +147,7 @@ function fetch_url(string $url): ?string
         $body = curl_exec($ch);
         curl_close($ch);
         if ($body !== false && strlen((string)$body) > 0) {
-            return substr((string)$body, 0, MAX_BYTES);
+            return (string)$body;
         }
         return null;
     }
@@ -155,7 +158,7 @@ function fetch_url(string $url): ?string
         'header'     => "Accept: application/xml, text/xml\r\n",
     ]]);
     $body = @file_get_contents($url, false, $ctx);
-    return $body !== false ? substr($body, 0, MAX_BYTES) : null;
+    return $body !== false ? $body : null;
 }
 
 function parse_response(DOMXPath $xp, string $action): array
@@ -329,4 +332,53 @@ function store_cache(PDO $db, string $key, string $data): void
 {
     $db->prepare('INSERT OR REPLACE INTO cache (key, response, fetched_at) VALUES (?, ?, ?)')
        ->execute([$key, $data, time()]);
+}
+
+function load_env_file(string $path): void
+{
+    if (!is_file($path) || !is_readable($path)) return;
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) return;
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) continue;
+        $eq = strpos($line, '=');
+        if ($eq === false) continue;
+
+        $key = trim(substr($line, 0, $eq));
+        $val = trim(substr($line, $eq + 1));
+        if ($key === '') continue;
+
+        if (
+            (str_starts_with($val, '"') && str_ends_with($val, '"')) ||
+            (str_starts_with($val, "'") && str_ends_with($val, "'"))
+        ) {
+            $val = substr($val, 1, -1);
+        }
+
+        putenv("{$key}={$val}");
+        $_ENV[$key] = $val;
+        $_SERVER[$key] = $val;
+    }
+}
+
+function env_string(string $key, string $default): string
+{
+    $val = getenv($key);
+    if ($val === false || $val === '') return $default;
+    return (string)$val;
+}
+
+function env_int(string $key, int $default, int $min, int $max): int
+{
+    $raw = getenv($key);
+    if ($raw === false || $raw === '') return $default;
+    if (!preg_match('/^-?\d+$/', (string)$raw)) return $default;
+
+    $n = (int)$raw;
+    if ($n < $min) return $min;
+    if ($n > $max) return $max;
+    return $n;
 }

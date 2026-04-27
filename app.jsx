@@ -33,7 +33,7 @@ function App() {
   const [repoData, setRepoData] = useState(null);
   const [loadingStep, setLoadingStep] = useState(0); // 0=pending 1=identify done 2=formats done 3=sets done
   const [prefilledFilters, setPrefilledFilters] = useState({});
-  const [activeRecord, setActiveRecord] = useState(null); // { record, prefix }
+  const [activeRecord, setActiveRecord] = useState(null); // { record, prefix, formats }
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -108,10 +108,9 @@ function App() {
       if (filters.from)  initParams.from  = filters.from;
       if (filters.until) initParams.until = filters.until;
 
-      let initRecords = [], initTotal = null, initToken = null, initLoaded = false;
+      let initRecords = [], initTotal = null, initToken = null, initLoaded = false, initNoRecordsMatch = false;
       try {
-        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("skip")), 8000));
-        const idRes = await Promise.race([fetchApi("listIdentifiers", baseUrl, initParams), timeout]);
+        const idRes = await fetchApi("listIdentifiers", baseUrl, initParams);
         if (idRes.ok) {
           initRecords = idRes.data.identifiers || [];
           initTotal   = idRes.data.total ?? null;
@@ -119,6 +118,7 @@ function App() {
           initLoaded  = true;
         } else if (idRes.oai_error === "noRecordsMatch") {
           initLoaded = true;
+          initNoRecordsMatch = true;
         }
       } catch (_) {}
       setLoadingStep(4);
@@ -128,7 +128,7 @@ function App() {
         formats:  fmts,
         sets:     setsRes.ok ? (setsRes.data.sets || []) : [],
         setsTruncated: setsRes.ok && setsRes.data.truncated,
-        initPrefix, initRecords, initTotal, initToken, initLoaded,
+        initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch,
       });
       setScreen("explore");
     } catch (e) {
@@ -158,7 +158,7 @@ function App() {
           url={url}
           repoData={repoData}
           prefilledFilters={prefilledFilters}
-          onOpenRecord={(record, prefix) => { setActiveRecord({ record, prefix }); setScreen("record"); }}
+          onOpenRecord={(record, prefix) => { setActiveRecord({ record, prefix, formats: repoData.formats }); setScreen("record"); }}
         />
       )}
       {screen === "record" && activeRecord && (
@@ -166,6 +166,7 @@ function App() {
           url={url}
           record={activeRecord.record}
           prefix={activeRecord.prefix}
+          formats={activeRecord.formats || []}
           onBack={() => setScreen("explore")}
         />
       )}
@@ -219,7 +220,10 @@ function LoadingScreen({ url, step }) {
   return (
     <main className="screen screen-start" style={{ paddingTop: 120 }}>
       <div style={{ textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
-        <div className="eyebrow" style={{ marginBottom: 16 }}>Connecting…</div>
+        <div className="loading-hero" style={{ marginBottom: 16 }}>
+          <span className="loading-spinner" aria-hidden="true" />
+          <div className="eyebrow" style={{ margin: 0 }}>Connecting…</div>
+        </div>
         <div className="info-url" style={{ marginBottom: 28 }}>{url}</div>
         <div style={{ display: "inline-flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
           {verbs.map((v, i) => {
@@ -264,6 +268,14 @@ function SyncCommand({ baseURL, prefix, setSpec, from, until, variant = "sidebar
   }, [baseURL, prefix, setSpec, from, until]);
 
   const [copied, setCopied] = useState(false);
+  const currentRequestUrl = useMemo(() => {
+    const sp = new URLSearchParams({ verb: "ListIdentifiers" });
+    if (setSpec) sp.set("set", setSpec);
+    if (from) sp.set("from", from);
+    if (until) sp.set("until", until);
+    return `${baseURL}?${sp.toString()}`;
+  }, [baseURL, setSpec, from, until]);
+
   const copy = () => {
     navigator.clipboard?.writeText(cmd);
     setCopied(true);
@@ -285,13 +297,19 @@ function SyncCommand({ baseURL, prefix, setSpec, from, until, variant = "sidebar
         </div>
       </div>
       <div className="cmd-hint mono">
-        requires{" "}
+        (requires{" "}
         <span className="cmd-hint-tooltip">
           <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a>
           <span className="tooltip-text">Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh</span>
         </span>
         {" "}+{" "}
-        <a href="https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha" target="_blank" rel="noopener noreferrer">ometha</a>
+        <a href="https://pypi.org/project/ometha/" target="_blank" rel="noopener noreferrer">ometha</a>)
+      </div>
+      <div className="cmd-hint mono cmd-hint--link">
+        Current request URL: {" "}
+        <a href={currentRequestUrl} target="_blank" rel="noopener noreferrer">
+          {currentRequestUrl}
+        </a>
       </div>
     </section>
   );
@@ -645,7 +663,7 @@ function StartScreen({ onSubmit }) {
 // ── Screen 2 — Explore ────────────────────────────────────────────────────────
 function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
   const { identify, formats, sets, setsTruncated,
-          initPrefix, initRecords, initTotal, initToken, initLoaded } = repoData;
+          initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch } = repoData;
 
   const defaultPrefix = prefilledFilters.metadataPrefix || initPrefix || "oai_dc";
   const defaultSet    = prefilledFilters.set ?? "";
@@ -660,7 +678,10 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
   const [records,          setRecords]          = useState(initRecords || []);
   const [total,            setTotal]            = useState(initTotal   ?? null);
   const [resumptionToken,  setResumptionToken]  = useState(initToken   ?? null);
+  const [pageHistory,      setPageHistory]      = useState([]);
+  const [pageIndex,        setPageIndex]        = useState(0);
   const [loaded,           setLoaded]           = useState(initLoaded  || false);
+  const [noRecordsMatch,   setNoRecordsMatch]   = useState(initNoRecordsMatch || false);
   const [loading,          setLoading]          = useState(false);
   const [loadError,        setLoadError]        = useState(null);
   const [hoverRow,         setHoverRow]         = useState(null);
@@ -672,26 +693,34 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
     );
   }, [sets, setQuery]);
 
-  const loadIdentifiers = useCallback(async (pfx, set, fromDate, untilDate) => {
+  const loadIdentifiers = useCallback(async ({ pfx, set, fromDate, untilDate, resumptionToken: token = "", history = [] }) => {
     setLoading(true);
     setLoaded(false);
     setLoadError(null);
+    setNoRecordsMatch(false);
     try {
-      const extra = { prefix: pfx };
-      if (set)       extra.set   = set;
-      if (fromDate)  extra.from  = fromDate;
-      if (untilDate) extra.until = untilDate;
+      const extra = token ? { resumptionToken: token } : { prefix: pfx };
+      if (!token) {
+        if (set)       extra.set   = set;
+        if (fromDate)  extra.from  = fromDate;
+        if (untilDate) extra.until = untilDate;
+      }
       const res = await fetchApi("listIdentifiers", url, extra);
       if (res.ok) {
         setRecords(res.data.identifiers || []);
         setTotal(res.data.total ?? null);
         setResumptionToken(res.data.resumptionToken ?? null);
+        setPageHistory(history);
+        setPageIndex(history.length);
         setLoaded(true);
       } else if (res.oai_error === "noRecordsMatch") {
         setRecords([]);
         setTotal(null);
         setResumptionToken(null);
+        setPageHistory([]);
+        setPageIndex(0);
         setLoaded(true);
+        setNoRecordsMatch(true);
       } else {
         setLoadError(res.error || "Failed to load identifiers");
       }
@@ -702,7 +731,44 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
     }
   }, [url]);
 
-  const triggerLoad = () => loadIdentifiers(prefix, setSpec, from, until);
+  const triggerLoad = () => loadIdentifiers({ pfx: prefix, set: setSpec, fromDate: from, untilDate: until, token: "", history: [] });
+
+  const goNextPage = async () => {
+    if (!resumptionToken || loading) return;
+    const nextHistory = [...pageHistory, { records, resumptionToken, pageIndex }];
+    await loadIdentifiers({
+      pfx: prefix,
+      set: setSpec,
+      fromDate: from,
+      untilDate: until,
+      token: resumptionToken,
+      history: nextHistory,
+    });
+  };
+
+  const goPrevPage = () => {
+    if (pageHistory.length === 0 || loading) return;
+    const previous = pageHistory[pageHistory.length - 1];
+    setRecords(previous.records || []);
+    setResumptionToken(previous.resumptionToken ?? null);
+    setPageHistory(pageHistory.slice(0, -1));
+    setPageIndex(previous.pageIndex ?? 0);
+    setLoaded(true);
+    setNoRecordsMatch(false);
+    setLoadError(null);
+  };
+
+  const resetFiltersAndReload = async () => {
+    const fallbackPrefix = formats.find((f) => f.value === "oai_dc")?.value
+      || formats[0]?.value
+      || "oai_dc";
+    setPrefix(fallbackPrefix);
+    setSetSpec("");
+    setSetQuery("");
+    setFrom("");
+    setUntil("");
+    await loadIdentifiers({ pfx: fallbackPrefix, set: "", fromDate: "", untilDate: "", token: "", history: [] });
+  };
 
   const totalDisplay = total !== null
     ? `~${total.toLocaleString("de-DE")}`
@@ -809,6 +875,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
               </div>
               <div className="filter filter-action">
                 <button className="btn btn-primary" onClick={triggerLoad} disabled={loading}>
+                  {loading && <span className="loading-spinner loading-spinner--inline" aria-hidden="true" />}
                   {loading ? "Loading…" : "Load identifiers"}
                 </button>
               </div>
@@ -831,6 +898,8 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
                   <>
                     <strong>{records.length.toLocaleString("de-DE")}</strong>
                     {totalDisplay && <> of {totalDisplay} total</>}
+                    <span className="results-sep">·</span>
+                    <span className="results-meta">page={pageIndex + 1}</span>
                     <span className="results-sep">·</span>
                     <span className="results-meta">prefix={prefix}</span>
                     {setSpec && (<><span className="results-sep">·</span><span className="results-meta">set={setSpec}</span></>)}
@@ -880,7 +949,20 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
                       <td><span className="skeleton" style={{ width: "30%", display: "inline-block" }} /></td>
                     </tr>
                   ))}
-                  {loaded && records.length === 0 && (
+                  {loaded && records.length === 0 && noRecordsMatch && (
+                    <tr>
+                      <td colSpan="3" className="empty" style={{ color: "var(--text-dim)" }}>
+                        <div style={{ marginBottom: 10 }}>
+                          The endpoint returned <span className="mono">noRecordsMatch</span> for this filter combination
+                          (metadataPrefix, set, from, until).
+                        </div>
+                        <button className="btn" style={{ margin: "0 auto", display: "flex" }} onClick={resetFiltersAndReload}>
+                          Reset filters and retry
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {loaded && records.length === 0 && !noRecordsMatch && (
                     <tr>
                       <td colSpan="3" className="empty" style={{ color: "var(--text-dim)" }}>
                         No records match the current filter combination. Try adjusting the date range or set filter.
@@ -916,22 +998,22 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
 
             {loaded && resumptionToken && (
               <div className="pager">
-                <span className="pager-info mono">resumptionToken available</span>
-                <button
-                  className="btn-ghost"
-                  onClick={async () => {
-                    setLoading(true);
-                    try {
-                      const res = await fetchApi("listIdentifiers", url, { resumptionToken });
-                      if (res.ok) {
-                        setRecords((prev) => [...prev, ...(res.data.identifiers || [])]);
-                        setResumptionToken(res.data.resumptionToken ?? null);
-                      }
-                    } finally { setLoading(false); }
-                  }}
-                  disabled={loading}
-                >
-                  Load next page →
+                <span className="pager-info mono">page {pageIndex + 1}</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn-ghost" onClick={goPrevPage} disabled={loading || pageHistory.length === 0}>
+                    ← Previous
+                  </button>
+                  <button className="btn-ghost" onClick={goNextPage} disabled={loading || !resumptionToken}>
+                    Next →
+                  </button>
+                </div>
+              </div>
+            )}
+            {loaded && !resumptionToken && pageIndex > 0 && (
+              <div className="pager">
+                <span className="pager-info mono">page {pageIndex + 1}</span>
+                <button className="btn-ghost" onClick={goPrevPage} disabled={loading || pageHistory.length === 0}>
+                  ← Previous
                 </button>
               </div>
             )}
@@ -1005,23 +1087,41 @@ function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onC
 }
 
 // ── Screen 3 — Record ─────────────────────────────────────────────────────────
-function RecordScreen({ url, record, prefix, onBack }) {
+function RecordScreen({ url, record, prefix, formats, onBack }) {
   const [xmlData,  setXmlData]  = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [fetchErr, setFetchErr] = useState(null);
   const [xmlCopied, setXmlCopied] = useState(false);
+  const [currentPrefix, setCurrentPrefix] = useState(prefix || "oai_dc");
+  const recordOaiUrl = useMemo(() => {
+    const sp = new URLSearchParams({
+      verb: "GetRecord",
+      identifier: record.identifier,
+      metadataPrefix: currentPrefix || "oai_dc",
+    });
+    return `${url}?${sp.toString()}`;
+  }, [url, record.identifier, currentPrefix]);
+
+  const prefixOptions = useMemo(() => {
+    if (formats?.length) return formats;
+    return [{ value: currentPrefix || "oai_dc", label: currentPrefix || "oai_dc" }];
+  }, [formats, currentPrefix]);
+
+  useEffect(() => {
+    setCurrentPrefix(prefix || "oai_dc");
+  }, [record.identifier, prefix]);
 
   useEffect(() => {
     setLoading(true);
     setFetchErr(null);
-    fetchApi("getRecord", url, { identifier: record.identifier, prefix: prefix || "oai_dc" })
+    fetchApi("getRecord", url, { identifier: record.identifier, prefix: currentPrefix || "oai_dc" })
       .then((res) => {
         if (res.ok) setXmlData(res.data);
         else        setFetchErr(res.error || "Failed to load record");
       })
       .catch(() => setFetchErr("Network error"))
       .finally(() => setLoading(false));
-  }, [url, record.identifier, prefix]);
+  }, [url, record.identifier, currentPrefix]);
 
   const xml = xmlData?.xml || "";
   const dc  = xmlData?.dc  || {};
@@ -1046,7 +1146,7 @@ function RecordScreen({ url, record, prefix, onBack }) {
 
       <header className="record-head">
         <div>
-          <div className="record-eyebrow">GetRecord · {prefix || "oai_dc"}</div>
+          <div className="record-eyebrow">GetRecord · {currentPrefix || "oai_dc"}</div>
           <h1 className="record-title">
             {dc.title?.[0] || record.identifier}
           </h1>
@@ -1057,8 +1157,26 @@ function RecordScreen({ url, record, prefix, onBack }) {
               <span>setSpec: {xmlData.setSpecs[0]}</span>
             )}
           </div>
+          <div className="record-url mono">
+            <span className="record-url-label">OAI URL: </span>
+            <a href={recordOaiUrl} target="_blank" rel="noopener noreferrer">
+              {recordOaiUrl}
+            </a>
+          </div>
         </div>
         <div className="record-actions">
+          <label className="record-prefix-switcher">
+            <span className="record-prefix-label">metadataPrefix</span>
+            <select
+              className="record-prefix-select"
+              value={currentPrefix || "oai_dc"}
+              onChange={(e) => setCurrentPrefix(e.target.value)}
+            >
+              {prefixOptions.map((format) => (
+                <option key={format.value} value={format.value}>{format.label}</option>
+              ))}
+            </select>
+          </label>
           <button className="btn-ghost" onClick={copyXml} disabled={!xml}>
             {xmlCopied ? "✓ Copied" : "Copy XML"}
           </button>
@@ -1073,8 +1191,16 @@ function RecordScreen({ url, record, prefix, onBack }) {
       )}
 
       {fetchErr && (
-        <div style={{ padding: "24px", color: "oklch(0.55 0.20 25)", fontSize: 13 }}>
-          Error: {fetchErr}
+        <div style={{ padding: "24px 0", color: "oklch(0.55 0.20 25)", fontSize: 13 }}>
+          <div style={{ marginBottom: 12 }}>
+            Error: {fetchErr}
+          </div>
+          <div className="record-url mono" style={{ marginTop: 0 }}>
+            <span className="record-url-label">OAI URL</span>
+            <a href={recordOaiUrl} target="_blank" rel="noopener noreferrer">
+              {recordOaiUrl}
+            </a>
+          </div>
         </div>
       )}
 
@@ -1092,15 +1218,8 @@ function RecordScreen({ url, record, prefix, onBack }) {
 
       {!loading && !fetchErr && (
         <div className="record-cli">
-          <div className="cmd-label">Sync these records from the CLI</div>
-          <SyncCommand
-            baseURL={url}
-            prefix={prefix || "oai_dc"}
-            setSpec={xmlData?.setSpecs?.[0] || ""}
-            from=""
-            until=""
-            variant="record"
-          />
+          <div className="cmd-label">Open this record in the OAI interface</div>
+          <div className="cmd-hint mono">The exact GetRecord URL is shown above for quick double-checking.</div>
         </div>
       )}
     </main>
