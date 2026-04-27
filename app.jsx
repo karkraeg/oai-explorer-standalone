@@ -1,0 +1,1128 @@
+/* global React, ReactDOM, useTweaks, TweaksPanel, TweakSection, TweakRadio */
+const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+const EXAMPLE_REPOS = [
+  { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
+  { label: "arXiv.org", url: "https://export.arxiv.org/oai2" },
+  { label: "Zenodo", url: "https://zenodo.org/oai2d" },
+];
+
+// ── API helper ────────────────────────────────────────────────────────────────
+const NOCACHE = new URLSearchParams(location.search).has("nocache");
+
+async function fetchApi(action, baseUrl, extra = {}) {
+  const sp = new URLSearchParams({ action, url: baseUrl });
+  Object.entries(extra).forEach(([k, v]) => { if (v) sp.set(k, v); });
+  if (NOCACHE) sp.set("nocache", "1");
+  const res = await fetch(`api.php?${sp}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+const DEFAULT_TWEAKS = /*EDITMODE-BEGIN*/{
+  "accent": "teal",
+  "density": "comfortable",
+  "monoFont": true
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(DEFAULT_TWEAKS);
+  const [screen, setScreen] = useState("start");
+  const [url, setUrl] = useState("");
+  const [repoData, setRepoData] = useState(null);
+  const [loadingStep, setLoadingStep] = useState(0); // 0=pending 1=identify done 2=formats done 3=sets done
+  const [prefilledFilters, setPrefilledFilters] = useState({});
+  const [activeRecord, setActiveRecord] = useState(null); // { record, prefix }
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const accents = {
+      teal:   195,
+      indigo: 265,
+      amber:  65,
+      rose:   15,
+    };
+    const hue = accents[tweaks.accent] ?? 195;
+    root.style.setProperty("--accent",        `oklch(0.55 0.13 ${hue})`);
+    root.style.setProperty("--accent-hover",  `oklch(0.48 0.14 ${hue})`);
+    root.style.setProperty("--accent-soft",   `oklch(0.96 0.03 ${hue})`);
+    root.style.setProperty("--accent-border", `oklch(0.85 0.06 ${hue})`);
+    root.style.setProperty("--accent-text",   `oklch(0.40 0.13 ${hue})`);
+    root.style.setProperty("--row-pad", tweaks.density === "compact" ? "8px" : "12px");
+  }, [tweaks.accent, tweaks.density]);
+
+  const goExplore = useCallback(async (rawUrl, broken) => {
+    if (broken) {
+      setError({ kind: broken, url: rawUrl });
+      setScreen("error");
+      return;
+    }
+
+    // Parse full OAI-PMH URLs with verb= params
+    let baseUrl = rawUrl;
+    let filters = {};
+    try {
+      const u = new URL(rawUrl);
+      if (u.searchParams.get("verb")) {
+        baseUrl = rawUrl.split("?")[0].replace(/\/+$/, "");
+        filters = {
+          metadataPrefix: u.searchParams.get("metadataPrefix") || "",
+          set:   u.searchParams.get("set")   || "",
+          from:  u.searchParams.get("from")  || "",
+          until: u.searchParams.get("until") || "",
+        };
+      }
+    } catch (e) { /* not a valid URL, treat as-is */ }
+
+    setUrl(baseUrl);
+    setPrefilledFilters(filters);
+    setError(null);
+    setRepoData(null);
+    setActiveRecord(null);
+    setLoadingStep(0);
+    setScreen("loading");
+
+    try {
+      const identifyRes = await fetchApi("identify", baseUrl);
+      setLoadingStep(1);
+      const formatsRes  = await fetchApi("listMetadataFormats", baseUrl);
+      setLoadingStep(2);
+      const setsRes     = await fetchApi("listSets", baseUrl);
+      setLoadingStep(3);
+
+      if (!identifyRes.ok) {
+        setError({ kind: identifyRes.kind || "unreachable", url: baseUrl, message: identifyRes.error });
+        setScreen("error");
+        return;
+      }
+
+      const fmts = formatsRes.ok ? (formatsRes.data || []) : [];
+      const initPrefix = fmts.find(f => f.value === "oai_dc") ? "oai_dc"
+                       : (fmts[0]?.value || "oai_dc");
+
+      // Respect any pre-parsed URL filters for the initial load
+      const initParams = { prefix: filters.metadataPrefix || initPrefix };
+      if (filters.set)   initParams.set   = filters.set;
+      if (filters.from)  initParams.from  = filters.from;
+      if (filters.until) initParams.until = filters.until;
+
+      let initRecords = [], initTotal = null, initToken = null, initLoaded = false;
+      try {
+        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("skip")), 8000));
+        const idRes = await Promise.race([fetchApi("listIdentifiers", baseUrl, initParams), timeout]);
+        if (idRes.ok) {
+          initRecords = idRes.data.identifiers || [];
+          initTotal   = idRes.data.total ?? null;
+          initToken   = idRes.data.resumptionToken ?? null;
+          initLoaded  = true;
+        } else if (idRes.oai_error === "noRecordsMatch") {
+          initLoaded = true;
+        }
+      } catch (_) {}
+      setLoadingStep(4);
+
+      setRepoData({
+        identify: identifyRes.data,
+        formats:  fmts,
+        sets:     setsRes.ok ? (setsRes.data.sets || []) : [],
+        setsTruncated: setsRes.ok && setsRes.data.truncated,
+        initPrefix, initRecords, initTotal, initToken, initLoaded,
+      });
+      setScreen("explore");
+    } catch (e) {
+      setError({ kind: "unreachable", url: baseUrl });
+      setScreen("error");
+    }
+  }, []);
+
+  return (
+    <div className="app">
+      <TopBar
+        screen={screen}
+        url={url}
+        onHome={() => setScreen("start")}
+        onChangeUrl={(u) => { goExplore(u); }}
+        onNavigate={(s) => setScreen(s)}
+      />
+
+      {screen === "start" && (
+        <StartScreen onSubmit={goExplore} />
+      )}
+      {screen === "loading" && (
+        <LoadingScreen url={url} step={loadingStep} />
+      )}
+      {screen === "explore" && repoData && (
+        <ExploreScreen
+          url={url}
+          repoData={repoData}
+          prefilledFilters={prefilledFilters}
+          onOpenRecord={(record, prefix) => { setActiveRecord({ record, prefix }); setScreen("record"); }}
+        />
+      )}
+      {screen === "record" && activeRecord && (
+        <RecordScreen
+          url={url}
+          record={activeRecord.record}
+          prefix={activeRecord.prefix}
+          onBack={() => setScreen("explore")}
+        />
+      )}
+      {screen === "faq" && (
+        <FaqScreen onBack={() => setScreen(url ? "explore" : "start")} />
+      )}
+      {screen === "imprint" && (
+        <ImprintScreen onBack={() => setScreen(url ? "explore" : "start")} />
+      )}
+      {screen === "error" && error && (
+        <ErrorScreen
+          error={error}
+          onRetry={() => goExplore(error.url)}
+          onHome={() => setScreen("start")}
+        />
+      )}
+
+      <SiteFooter onNavigate={(s) => setScreen(s)} />
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Accent color">
+          <TweakRadio
+            value={tweaks.accent}
+            onChange={(v) => setTweak("accent", v)}
+            options={[
+              { value: "teal",   label: "Teal"   },
+              { value: "indigo", label: "Indigo" },
+              { value: "amber",  label: "Amber"  },
+              { value: "rose",   label: "Rose"   },
+            ]}
+          />
+        </TweakSection>
+        <TweakSection title="Table density">
+          <TweakRadio
+            value={tweaks.density}
+            onChange={(v) => setTweak("density", v)}
+            options={[
+              { value: "comfortable", label: "Comfortable" },
+              { value: "compact",     label: "Compact"     },
+            ]}
+          />
+        </TweakSection>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+// ── Loading screen ────────────────────────────────────────────────────────────
+function LoadingScreen({ url, step }) {
+  const verbs = ["Identify", "ListMetadataFormats", "ListSets", "ListIdentifiers"];
+  return (
+    <main className="screen screen-start" style={{ paddingTop: 120 }}>
+      <div style={{ textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
+        <div className="eyebrow" style={{ marginBottom: 16 }}>Connecting…</div>
+        <div className="info-url" style={{ marginBottom: 28 }}>{url}</div>
+        <div style={{ display: "inline-flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+          {verbs.map((v, i) => {
+            const done    = step > i;
+            const active  = step === i;
+            return (
+              <div key={v} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{
+                  width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontFamily: "var(--font-mono)",
+                  background: done ? "var(--accent)" : "var(--bg-soft)",
+                  border: `1px solid ${done ? "var(--accent)" : active ? "var(--accent)" : "var(--border)"}`,
+                  color: done ? "white" : "var(--text-dim)",
+                  transition: "all .2s ease",
+                }}>
+                  {done ? "✓" : (active ? "…" : "")}
+                </span>
+                <span className="results-meta" style={{
+                  color: done ? "var(--text)" : active ? "var(--accent-text)" : "var(--text-dim)",
+                  transition: "color .2s ease",
+                }}>{v}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ── Sync command ──────────────────────────────────────────────────────────────
+function SyncCommand({ baseURL, prefix, setSpec, from, until, variant = "sidebar" }) {
+  const cmd = useMemo(() => {
+    const parts = ["uvx", "ometha", "default", "-p 1"];
+    parts.push(`--baseurl ${baseURL}`);
+    if (prefix)  parts.push(`--metadataprefix ${prefix}`);
+    if (setSpec) parts.push(`--set ${setSpec}`);
+    if (from)    parts.push(`--fromdate ${from}`);
+    if (until)   parts.push(`--untildate ${until}`);
+    return parts.join(" ");
+  }, [baseURL, prefix, setSpec, from, until]);
+
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(cmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <section className={`cmd-block cmd-block--${variant}`}>
+      <div className="cmd-label">
+        <span>Sync from CLI</span>
+        <button className="cmd-copy-mini" onClick={copy}>
+          {copied ? "✓ Copied" : "Copy"}
+        </button>
+      </div>
+      <div className="cmd-row">
+        <div className="cmd-line">
+          <span className="cmd-prompt">$</span>
+          <code className="cmd-text">{cmd}</code>
+        </div>
+      </div>
+      <div className="cmd-hint mono">
+        requires{" "}
+        <span className="cmd-hint-tooltip">
+          <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a>
+          <span className="tooltip-text">Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh</span>
+        </span>
+        {" "}+{" "}
+        <a href="https://github.com/Deutsche-Digitale-Bibliothek/ddblabs-ometha" target="_blank" rel="noopener noreferrer">ometha</a>
+      </div>
+    </section>
+  );
+}
+
+// ── Error screen ──────────────────────────────────────────────────────────────
+function ErrorScreen({ error, onRetry, onHome }) {
+  const isUnreachable = error.kind === "unreachable";
+  const oaiUrl = error.url ? `${error.url}?verb=Identify` : "—";
+  const meta = isUnreachable
+    ? {
+        eyebrow: "Connection error",
+        code: "ERR_NET",
+        title: "Couldn't reach the repository",
+        summary: error.message || "The host didn't respond within 15 seconds. The server may be offline, the URL might be misspelled, or a firewall could be blocking the request.",
+        trace: [
+          { k: "GET",    v: oaiUrl },
+          { k: "Status", v: "ERR_CONNECTION_TIMED_OUT", status: true },
+          { k: "DNS",    v: "no resolvable address" },
+          { k: "Time",   v: "15.0 s (timeout)" },
+        ],
+        checks: [
+          { ic: "✕", state: "fail", h: "Host did not resolve", s: "DNS lookup returned no record. Double-check the domain." },
+          { ic: "—", state: "warn", h: "TLS handshake skipped", s: "Connection never established." },
+          { ic: "—", state: "warn", h: "Identify response not received", s: "We can't verify whether the endpoint speaks OAI-PMH until the host responds." },
+        ],
+      }
+    : {
+        eyebrow: "Protocol error",
+        code: "ERR_OAI_INVALID",
+        title: "This URL doesn't speak OAI-PMH",
+        summary: error.message || "The host responded, but the body is not a valid OAI-PMH 2.0 document. The Identify verb returned HTML where XML was expected.",
+        trace: [
+          { k: "GET",          v: oaiUrl },
+          { k: "Status",       v: "200 OK", status: true },
+          { k: "Content-Type", v: "text/html; charset=utf-8" },
+          { k: "Body",         v: "<!doctype html><html>…" },
+          { k: "Expected",     v: "application/xml with <OAI-PMH> root element" },
+        ],
+        checks: [
+          { ic: "✓", state: "ok",   h: "Host reachable",       s: `${error.url} responded.` },
+          { ic: "✕", state: "fail", h: "Wrong Content-Type",   s: "Expected application/xml, got text/html." },
+          { ic: "✕", state: "fail", h: "Missing <OAI-PMH> root", s: "No XML namespace http://www.openarchives.org/OAI/2.0/ found." },
+        ],
+      };
+
+  return (
+    <main className="screen">
+      <div className="error-screen">
+        <header className="error-head">
+          <div className="error-icon">!</div>
+          <div className="error-title-wrap">
+            <div className="error-eyebrow">{meta.eyebrow} · {meta.code}</div>
+            <h1 className="error-title">{meta.title}</h1>
+            <p className="error-summary">{meta.summary}</p>
+          </div>
+        </header>
+
+        <div className="error-trace">
+          {meta.trace.map((t, i) => (
+            <div key={i}>
+              <span className="et-key">{t.k.padEnd(14, " ")}</span>
+              <span className={t.status ? "et-status" : "et-val"}>{t.v}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="error-checks">
+          {meta.checks.map((c, i) => (
+            <div key={i} className={`error-check ${c.state === "fail" ? "is-fail-row" : ""}`}>
+              <div className={`error-check-icon is-${c.state}`}>{c.ic}</div>
+              <div className="error-check-text">
+                <strong>{c.h}</strong>
+                <small>{c.s}</small>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="error-actions">
+          <button className="btn btn-danger" onClick={onRetry}>Retry connection</button>
+          <button className="btn" onClick={onHome}>Try a different URL</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ── Logo ──────────────────────────────────────────────────────────────────────
+function Logo({ size = 22 }) {
+  return (
+    <svg
+      className="brand-logo"
+      width={size} height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="square"
+      strokeLinejoin="miter"
+      aria-hidden="true"
+    >
+      <rect x="3.5" y="13.5" width="13" height="7" />
+      <rect x="5.5" y="9.5"  width="13" height="7" fill="var(--bg)" />
+      <rect x="7.5" y="5.5"  width="13" height="7" fill="var(--bg)" stroke="var(--accent)" />
+      <path d="M14 3.5 L14 5.5 M12 4.5 L14 3.5 L16 4.5" stroke="var(--accent)" />
+    </svg>
+  );
+}
+
+// ── Top bar ───────────────────────────────────────────────────────────────────
+function TopBar({ screen, url, onHome, onChangeUrl, onNavigate }) {
+  const showSwitcher = screen === "explore" || screen === "record";
+  const [val, setVal] = useState(url || "");
+  useEffect(() => { setVal(url || ""); }, [url]);
+
+  const submit = () => {
+    if (val.trim() && val.trim() !== url) onChangeUrl(val.trim());
+  };
+
+  return (
+    <header className="topbar">
+      <div className="topbar-inner">
+        <button className="brand" onClick={onHome} title="Home">
+          <Logo />
+          <span className="brand-name">OAI-PMH <span className="brand-name-dim">Explorer</span></span>
+        </button>
+
+        {showSwitcher && (
+          <form className="tb-search" onSubmit={(e) => { e.preventDefault(); submit(); }} role="search">
+            <span className="tb-search-icon">⌕</span>
+            <input
+              type="url"
+              className="tb-search-input mono"
+              placeholder="https://oai.example.org/oai"
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+            />
+            {val !== url && val.trim() && (
+              <button type="submit" className="tb-search-go">Go ↵</button>
+            )}
+          </form>
+        )}
+
+        <nav className="topbar-meta">
+          {showSwitcher && (
+            <button className="tb-new" onClick={onHome} title="Start a new search">
+              <span className="tb-new-plus">+</span> New
+            </button>
+          )}
+          <button className={`topbar-link ${screen === "faq"     ? "is-active" : ""}`} onClick={() => onNavigate("faq")}>FAQ</button>
+          <button className={`topbar-link ${screen === "imprint" ? "is-active" : ""}`} onClick={() => onNavigate("imprint")}>Imprint</button>
+          <a className="topbar-link" href="https://github.com/miku/metha" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+// ── FAQ ───────────────────────────────────────────────────────────────────────
+function FaqScreen({ onBack }) {
+  const items = [
+    { q: "What is OAI-PMH?",
+      a: "The Open Archives Initiative Protocol for Metadata Harvesting is a low-barrier mechanism for repository interoperability. Data providers expose metadata as XML over HTTP; harvesters fetch it incrementally using six standard verbs." },
+    { q: "Which verbs does this tool use?",
+      a: "Identify (repository info), ListMetadataFormats, ListSets, ListIdentifiers, and GetRecord. The Explore screen calls Identify + ListSets + ListMetadataFormats in parallel when you connect, then ListIdentifiers when you click Load." },
+    { q: "Why are some records marked deleted?",
+      a: "Repositories can keep tombstones for removed records so harvesters can drop them on their side. The Identify response declares this policy as no, persistent, or transient." },
+    { q: "Can I export the records?",
+      a: "Yes — the sync command under the filters is a uvx ometha one-liner that mirrors your current prefix, set, and date range. Requires uv and ometha installed locally." },
+    { q: "Why does ListRecords sometimes paginate?",
+      a: "Repositories return a resumptionToken when the result set exceeds their page limit. The harvester replays the request with that token until it comes back empty." },
+    { q: "Is this tool affiliated with any specific repository?",
+      a: "No — it's a generic OAI-PMH 2.0 client. Any compliant endpoint should work; the example chips on the start screen are popular German and international repositories." },
+  ];
+
+  return (
+    <main className="screen screen-doc">
+      <button className="back-link" onClick={onBack}>
+        <span className="back-arrow">←</span> Back
+      </button>
+      <div className="doc-eyebrow">Help</div>
+      <h1 className="doc-title">Frequently asked questions</h1>
+      <p className="doc-lede">A quick primer on OAI-PMH and how this explorer fits into a typical harvesting workflow.</p>
+      <div className="faq">
+        {items.map((it, i) => (
+          <div key={i} className="faq-item">
+            <div className="faq-num">{String(i + 1).padStart(2, "0")}</div>
+            <div>
+              <h2 className="faq-q">{it.q}</h2>
+              <p className="faq-a">{it.a}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}
+
+// ── Imprint ───────────────────────────────────────────────────────────────────
+function ImprintScreen({ onBack }) {
+  return (
+    <main className="screen screen-doc">
+      <button className="back-link" onClick={onBack}>
+        <span className="back-arrow">←</span> Back
+      </button>
+      <div className="doc-eyebrow">Legal</div>
+      <h1 className="doc-title">Imprint</h1>
+      <p className="doc-lede">Information per § 5 TMG.</p>
+
+      <section className="doc-section">
+        <h2 className="doc-h2">Operator</h2>
+        <p className="doc-p mono">
+          [Your name / organisation]<br />
+          [Street address]<br />
+          [Postal code, city]<br />
+          Germany
+        </p>
+      </section>
+      <section className="doc-section">
+        <h2 className="doc-h2">Contact</h2>
+        <dl className="doc-dl">
+          <div><dt>Email</dt><dd className="mono">contact@example.org</dd></div>
+          <div><dt>Phone</dt><dd className="mono">+49 (0)30 0000 0000</dd></div>
+        </dl>
+      </section>
+      <section className="doc-section">
+        <h2 className="doc-h2">Liability for content</h2>
+        <p className="doc-p">
+          As a service provider we are responsible for our own content on these pages
+          per § 7 (1) TMG. We are not obliged to monitor third-party information
+          transmitted or stored, or to investigate circumstances that point to illegal
+          activity, per §§ 8–10 TMG.
+        </p>
+      </section>
+      <section className="doc-section">
+        <h2 className="doc-h2">External links</h2>
+        <p className="doc-p">
+          Linked external sites were checked for legal compliance at the time of linking;
+          we have no influence over their current or future content and accept no liability
+          for it.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+// ── Footer ────────────────────────────────────────────────────────────────────
+function SiteFooter({ onNavigate }) {
+  return (
+    <footer className="site-footer">
+      <div className="footer-inner">
+        <div className="footer-brand mono">OAI-PMH Explorer · v0.4.2</div>
+        <span className="footer-sep">·</span>
+        <nav className="footer-links">
+          <button onClick={() => onNavigate("faq")}>FAQ</button>
+          <button onClick={() => onNavigate("imprint")}>Imprint</button>
+          <a href="https://github.com/miku/metha" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </div>
+    </footer>
+  );
+}
+
+// ── Screen 1 — Start ──────────────────────────────────────────────────────────
+function StartScreen({ onSubmit }) {
+  const [val, setVal] = useState("");
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const submit = () => { if (val.trim()) onSubmit(val.trim()); };
+
+  return (
+    <main className="screen screen-start">
+      <div className="hero">
+        <div className="eyebrow">OAI-PMH 2.0 · Repository tool</div>
+        <h1 className="hero-title">
+          Explore OAI-PMH <em>repositories</em>.
+        </h1>
+        <p className="hero-sub">
+          Inspect endpoints, browse sets, and read records —
+          all in the browser, no command line required.
+        </p>
+
+        <label className="field">
+          <span className="field-label">OAI-PMH repository URL</span>
+          <div className="search-row">
+            <input
+              ref={inputRef}
+              type="url"
+              className="search-input"
+              placeholder="https://oai.example.org/oai"
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+            />
+            <button className="btn btn-primary btn-lg" onClick={submit} disabled={!val.trim()}>
+              Connect
+              <span className="btn-arrow">→</span>
+            </button>
+          </div>
+          <span className="field-hint">
+            Press <span className="kbd">↵</span> or click "Connect". The URL must expose a <code>?verb=Identify</code> endpoint.
+          </span>
+        </label>
+
+        <div className="examples">
+          <span className="examples-label">Examples</span>
+          <div className="chips">
+            {EXAMPLE_REPOS.map((r) => (
+              <button
+                key={r.url}
+                className="chip"
+                onClick={() => onSubmit(r.url)}
+                title={r.url}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hero-feat">
+          <div className="feat">
+            <span className="feat-num">01</span>
+            <div>
+              <div className="feat-h">Identify · ListSets · ListMetadataFormats</div>
+              <div className="feat-p">All OAI-PMH 2.0 verbs are queried and rendered in a readable layout.</div>
+            </div>
+          </div>
+          <div className="feat">
+            <span className="feat-num">02</span>
+            <div>
+              <div className="feat-h">Filter by set, format, and date</div>
+              <div className="feat-p">Narrow identifiers down with <code>from</code>/<code>until</code> ranges and a searchable set picker.</div>
+            </div>
+          </div>
+          <div className="feat">
+            <span className="feat-num">03</span>
+            <div>
+              <div className="feat-h">Inspect XML records</div>
+              <div className="feat-p">Full records with syntax highlighting; one-liner export commands ready to copy.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+// ── Screen 2 — Explore ────────────────────────────────────────────────────────
+function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
+  const { identify, formats, sets, setsTruncated,
+          initPrefix, initRecords, initTotal, initToken, initLoaded } = repoData;
+
+  const defaultPrefix = prefilledFilters.metadataPrefix || initPrefix || "oai_dc";
+  const defaultSet    = prefilledFilters.set ?? "";
+
+  const [prefix,   setPrefix]   = useState(defaultPrefix);
+  const [setSpec,  setSetSpec]  = useState(defaultSet);
+  const [setQuery, setSetQuery] = useState("");
+  const [setOpen,  setSetOpen]  = useState(false);
+  const [from,     setFrom]     = useState(prefilledFilters.from  || "");
+  const [until,    setUntil]    = useState(prefilledFilters.until || "");
+
+  const [records,          setRecords]          = useState(initRecords || []);
+  const [total,            setTotal]            = useState(initTotal   ?? null);
+  const [resumptionToken,  setResumptionToken]  = useState(initToken   ?? null);
+  const [loaded,           setLoaded]           = useState(initLoaded  || false);
+  const [loading,          setLoading]          = useState(false);
+  const [loadError,        setLoadError]        = useState(null);
+  const [hoverRow,         setHoverRow]         = useState(null);
+
+  const filteredSets = useMemo(() => {
+    const q = setQuery.toLowerCase();
+    return sets.filter((s) =>
+      s.spec.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
+    );
+  }, [sets, setQuery]);
+
+  const loadIdentifiers = useCallback(async (pfx, set, fromDate, untilDate) => {
+    setLoading(true);
+    setLoaded(false);
+    setLoadError(null);
+    try {
+      const extra = { prefix: pfx };
+      if (set)       extra.set   = set;
+      if (fromDate)  extra.from  = fromDate;
+      if (untilDate) extra.until = untilDate;
+      const res = await fetchApi("listIdentifiers", url, extra);
+      if (res.ok) {
+        setRecords(res.data.identifiers || []);
+        setTotal(res.data.total ?? null);
+        setResumptionToken(res.data.resumptionToken ?? null);
+        setLoaded(true);
+      } else if (res.oai_error === "noRecordsMatch") {
+        setRecords([]);
+        setTotal(null);
+        setResumptionToken(null);
+        setLoaded(true);
+      } else {
+        setLoadError(res.error || "Failed to load identifiers");
+      }
+    } catch (e) {
+      setLoadError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [url]);
+
+  const triggerLoad = () => loadIdentifiers(prefix, setSpec, from, until);
+
+  const totalDisplay = total !== null
+    ? `~${total.toLocaleString("de-DE")}`
+    : null;
+
+  return (
+    <main className="screen screen-explore">
+      <div className="explore-grid">
+
+        {/* LEFT — Repository info */}
+        <aside className="info-card">
+          <div className="info-head">
+            <span className="info-eyebrow">Repository</span>
+          </div>
+          <h2 className="info-title">{identify.repositoryName || url}</h2>
+          <div className="info-url" title={identify.baseURL || url}>
+            {identify.baseURL || url}
+          </div>
+
+          <dl className="info-list">
+            {identify.adminEmail && (
+              <div className="info-row">
+                <dt>Admin email</dt>
+                <dd><a href={`mailto:${identify.adminEmail}`}>{identify.adminEmail}</a></dd>
+              </div>
+            )}
+            {identify.earliestDatestamp && (
+              <div className="info-row">
+                <dt>Earliest datestamp</dt>
+                <dd className="mono">{identify.earliestDatestamp}</dd>
+              </div>
+            )}
+            {identify.granularity && (
+              <div className="info-row">
+                <dt>Granularity</dt>
+                <dd className="mono">{identify.granularity}</dd>
+              </div>
+            )}
+          </dl>
+
+          <div className="info-counts">
+            <div className="count">
+              <div className="count-num">{formats.length || "—"}</div>
+              <div className="count-lbl">Formats</div>
+            </div>
+            <div className="count">
+              <div className="count-num">
+                {sets.length > 0 ? (setsTruncated ? `${sets.length}+` : sets.length) : "—"}
+              </div>
+              <div className="count-lbl">Sets</div>
+            </div>
+            <div className="count">
+              <div className="count-num">{totalDisplay || "—"}</div>
+              <div className="count-lbl">Records</div>
+            </div>
+          </div>
+        </aside>
+
+        {/* RIGHT — Filters + table */}
+        <section className="explore-main">
+          <div className="filters">
+            <div className="filter-row">
+              <div className="filter">
+                <label className="lbl">Metadata prefix</label>
+                <select
+                  className="select"
+                  value={prefix}
+                  onChange={(e) => setPrefix(e.target.value)}
+                >
+                  {formats.length > 0
+                    ? formats.map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))
+                    : <option value="oai_dc">oai_dc</option>
+                  }
+                </select>
+              </div>
+
+              <div className="filter">
+                <label className="lbl">Set</label>
+                <SetCombobox
+                  value={setSpec}
+                  query={setQuery}
+                  open={setOpen}
+                  allSets={sets}
+                  onQueryChange={setSetQuery}
+                  onToggle={() => setSetOpen(!setOpen)}
+                  onClose={() => setSetOpen(false)}
+                  onSelect={(s) => { setSetSpec(s.spec); setSetOpen(false); setSetQuery(""); }}
+                  onClear={() => { setSetSpec(""); setSetOpen(false); }}
+                  options={filteredSets}
+                />
+              </div>
+            </div>
+
+            <div className="filter-row">
+              <div className="filter">
+                <label className="lbl">From <span className="lbl-opt">(optional)</span></label>
+                <input type="date" className="select" value={from} onChange={(e) => setFrom(e.target.value)} />
+              </div>
+              <div className="filter">
+                <label className="lbl">Until <span className="lbl-opt">(optional)</span></label>
+                <input type="date" className="select" value={until} onChange={(e) => setUntil(e.target.value)} />
+              </div>
+              <div className="filter filter-action">
+                <button className="btn btn-primary" onClick={triggerLoad} disabled={loading}>
+                  {loading ? "Loading…" : "Load identifiers"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <SyncCommand
+            baseURL={url}
+            prefix={prefix}
+            setSpec={setSpec}
+            from={from}
+            until={until}
+            variant="explore"
+          />
+
+          <div className="results">
+            <div className="results-head">
+              <div className="results-caption">
+                {loaded ? (
+                  <>
+                    <strong>{records.length.toLocaleString("de-DE")}</strong>
+                    {totalDisplay && <> of {totalDisplay} total</>}
+                    <span className="results-sep">·</span>
+                    <span className="results-meta">prefix={prefix}</span>
+                    {setSpec && (<><span className="results-sep">·</span><span className="results-meta">set={setSpec}</span></>)}
+                  </>
+                ) : loading ? (
+                  "Loading identifiers…"
+                ) : (
+                  "No data loaded"
+                )}
+              </div>
+            </div>
+
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: "55%" }}>Identifier</th>
+                    <th style={{ width: "30%" }}>Datestamp</th>
+                    <th style={{ width: "15%" }}>Deleted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loaded && records.map((r, i) => (
+                    <tr
+                      key={r.identifier}
+                      onMouseEnter={() => setHoverRow(i)}
+                      onMouseLeave={() => setHoverRow(null)}
+                      onClick={() => onOpenRecord(r, prefix)}
+                      className={hoverRow === i ? "row-hover" : ""}
+                    >
+                      <td className="mono cell-id">
+                        <span className="cell-id-text">{r.identifier}</span>
+                      </td>
+                      <td className="mono cell-date">{r.datestamp}</td>
+                      <td>
+                        {r.deleted
+                          ? <span className="badge badge-deleted">deleted</span>
+                          : <span className="badge-empty">—</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                  {loading && Array.from({ length: 8 }).map((_, i) => (
+                    <tr key={"sk" + i}>
+                      <td><span className="skeleton" style={{ width: "70%", display: "inline-block" }} /></td>
+                      <td><span className="skeleton" style={{ width: "60%", display: "inline-block" }} /></td>
+                      <td><span className="skeleton" style={{ width: "30%", display: "inline-block" }} /></td>
+                    </tr>
+                  ))}
+                  {loaded && records.length === 0 && (
+                    <tr>
+                      <td colSpan="3" className="empty" style={{ color: "var(--text-dim)" }}>
+                        No records match the current filter combination. Try adjusting the date range or set filter.
+                      </td>
+                    </tr>
+                  )}
+                  {!loaded && !loading && !loadError && (
+                    <tr>
+                      <td colSpan="3" className="empty">
+                        <button
+                          className="btn btn-primary"
+                          style={{ margin: "0 auto", display: "flex" }}
+                          onClick={triggerLoad}
+                        >
+                          Load identifiers →
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {!loaded && !loading && loadError && (
+                    <tr>
+                      <td colSpan="3" className="empty" style={{ color: "oklch(0.55 0.20 25)" }}>
+                        <div style={{ marginBottom: 12 }}>{loadError}</div>
+                        <button className="btn" style={{ margin: "0 auto", display: "flex" }} onClick={triggerLoad}>
+                          Retry
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {loaded && resumptionToken && (
+              <div className="pager">
+                <span className="pager-info mono">resumptionToken available</span>
+                <button
+                  className="btn-ghost"
+                  onClick={async () => {
+                    setLoading(true);
+                    try {
+                      const res = await fetchApi("listIdentifiers", url, { resumptionToken });
+                      if (res.ok) {
+                        setRecords((prev) => [...prev, ...(res.data.identifiers || [])]);
+                        setResumptionToken(res.data.resumptionToken ?? null);
+                      }
+                    } finally { setLoading(false); }
+                  }}
+                  disabled={loading}
+                >
+                  Load next page →
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+// ── Set combobox ──────────────────────────────────────────────────────────────
+function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onClose, onSelect, onClear, options }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  const selected = allSets.find((s) => s.spec === value);
+
+  return (
+    <div className={`combobox ${open ? "is-open" : ""}`} ref={ref}>
+      <button type="button" className="combo-trigger" onClick={onToggle}>
+        {value
+          ? (<><span className="combo-spec mono">{value}</span><span className="combo-name">{selected?.name || ""}</span></>)
+          : (<span className="combo-name" style={{ color: "var(--text-dim)" }}>All sets</span>)
+        }
+        <span className="combo-caret">▾</span>
+      </button>
+      {open && (
+        <div className="combo-pop">
+          <div className="combo-search">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search sets…"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+            />
+            <span className="combo-count">{options.length}</span>
+          </div>
+          <div className="combo-list">
+            <button
+              className={`combo-item ${!value ? "is-active" : ""}`}
+              onClick={onClear}
+            >
+              <span className="mono combo-item-spec" style={{ color: "var(--text-dim)" }}>—</span>
+              <span className="combo-item-name">All sets (no filter)</span>
+            </button>
+            {options.length === 0 && (
+              <div className="combo-empty">No matches</div>
+            )}
+            {options.map((o) => (
+              <button
+                key={o.spec}
+                className={`combo-item ${o.spec === value ? "is-active" : ""}`}
+                onClick={() => onSelect(o)}
+              >
+                <span className="mono combo-item-spec">{o.spec}</span>
+                <span className="combo-item-name">{o.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Screen 3 — Record ─────────────────────────────────────────────────────────
+function RecordScreen({ url, record, prefix, onBack }) {
+  const [xmlData,  setXmlData]  = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [fetchErr, setFetchErr] = useState(null);
+  const [xmlCopied, setXmlCopied] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setFetchErr(null);
+    fetchApi("getRecord", url, { identifier: record.identifier, prefix: prefix || "oai_dc" })
+      .then((res) => {
+        if (res.ok) setXmlData(res.data);
+        else        setFetchErr(res.error || "Failed to load record");
+      })
+      .catch(() => setFetchErr("Network error"))
+      .finally(() => setLoading(false));
+  }, [url, record.identifier, prefix]);
+
+  const xml = xmlData?.xml || "";
+  const dc  = xmlData?.dc  || {};
+
+  const copyXml = () => {
+    navigator.clipboard?.writeText(xml);
+    setXmlCopied(true);
+    setTimeout(() => setXmlCopied(false), 1500);
+  };
+
+  return (
+    <main className="screen screen-record">
+      <button className="back-link" onClick={onBack}>
+        <span className="back-arrow">←</span> Back to list
+      </button>
+
+      <nav className="breadcrumb mono" aria-label="Breadcrumb">
+        <span className="bc-base">{url}</span>
+        <span className="bc-sep">/</span>
+        <span className="bc-cur">{record.identifier}</span>
+      </nav>
+
+      <header className="record-head">
+        <div>
+          <div className="record-eyebrow">GetRecord · {prefix || "oai_dc"}</div>
+          <h1 className="record-title">
+            {dc.title?.[0] || record.identifier}
+          </h1>
+          <div className="record-meta mono">
+            <span>datestamp: {record.datestamp}</span>
+            <span>deleted: {record.deleted ? "true" : "false"}</span>
+            {xmlData?.setSpecs?.length > 0 && (
+              <span>setSpec: {xmlData.setSpecs[0]}</span>
+            )}
+          </div>
+        </div>
+        <div className="record-actions">
+          <button className="btn-ghost" onClick={copyXml} disabled={!xml}>
+            {xmlCopied ? "✓ Copied" : "Copy XML"}
+          </button>
+        </div>
+      </header>
+
+      {loading && (
+        <div style={{ padding: "40px 0", textAlign: "center" }}>
+          <div className="skeleton" style={{ width: 200, height: 12, display: "inline-block" }} />
+          <p className="results-caption" style={{ marginTop: 12 }}>Loading record…</p>
+        </div>
+      )}
+
+      {fetchErr && (
+        <div style={{ padding: "24px", color: "oklch(0.55 0.20 25)", fontSize: 13 }}>
+          Error: {fetchErr}
+        </div>
+      )}
+
+      {!loading && xml && (
+        <section className="code-block">
+          <div className="code-head">
+            <div className="code-tabs">
+              <span className="code-tab is-active">XML</span>
+            </div>
+            <div className="code-meta mono">{xml.length.toLocaleString()} bytes</div>
+          </div>
+          <pre className="code"><code dangerouslySetInnerHTML={{ __html: highlightXml(xml) }} /></pre>
+        </section>
+      )}
+
+      {!loading && !fetchErr && (
+        <div className="record-cli">
+          <div className="cmd-label">Sync these records from the CLI</div>
+          <SyncCommand
+            baseURL={url}
+            prefix={prefix || "oai_dc"}
+            setSpec={xmlData?.setSpecs?.[0] || ""}
+            from=""
+            until=""
+            variant="record"
+          />
+        </div>
+      )}
+    </main>
+  );
+}
+
+// ── XML syntax highlighter ────────────────────────────────────────────────────
+function highlightXml(xml) {
+  let s = xml.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s = s.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="x-com">$1</span>');
+  s = s.replace(/(&lt;\?[\s\S]*?\?&gt;)/g,  '<span class="x-decl">$1</span>');
+  s = s.replace(
+    /(&lt;\/?)([a-zA-Z_][\w:-]*)([^&]*?)(\/?&gt;)/g,
+    (m, lt, tag, rest, gt) => {
+      const attrs = rest.replace(
+        /([a-zA-Z_:][\w:.-]*)=("[^"]*"|'[^']*')/g,
+        '<span class="x-attr">$1</span>=<span class="x-val">$2</span>'
+      );
+      return `<span class="x-punct">${lt}</span><span class="x-tag">${tag}</span>${attrs}<span class="x-punct">${gt}</span>`;
+    }
+  );
+  return s;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
