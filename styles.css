@@ -621,7 +621,10 @@ code,
 }
 
 .brand-logo {
-  color: var(--text);
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
   flex-shrink: 0;
 }
 .brand-name-dim {

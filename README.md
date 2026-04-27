@@ -6,15 +6,11 @@ Ein leichter OAI-PMH-Client im Browser. Die App verbindet sich mit einem OAI-PMH
 
 Dieses Repository enthaelt eine kleine Web-App mit:
 
-- Frontend in `index.html`, `app.jsx`, `styles.css`, `tweaks-panel.jsx`
+- Frontend in `index.html`, `app.jsx`, `styles.css`
 - PHP-Backend in `api.php` als Proxy/Parser für OAI-PMH
 - SQLite-Cache in `cache.sqlite` (wird automatisch genutzt)
 
 Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webpack).
-
-### Braucht man `tweaks-panel.jsx`?
-
-Ja, im aktuellen Stand ja: `app.jsx` nutzt `useTweaks`, `TweaksPanel`, `TweakSection` und `TweakRadio` direkt aus dieser Datei. Ohne `tweaks-panel.jsx` startet das Frontend nicht.
 
 ## Wie funktioniert es?
 
@@ -72,7 +68,6 @@ Bedeutung:
 |- app.jsx
 |- index.html
 |- styles.css
-|- tweaks-panel.jsx
 |- cache.sqlite
 ```
 

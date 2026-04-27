@@ -1,4 +1,4 @@
-/* global React, ReactDOM, useTweaks, TweaksPanel, TweakSection, TweakRadio */
+/* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
 const EXAMPLE_REPOS = [
@@ -19,15 +19,7 @@ async function fetchApi(action, baseUrl, extra = {}) {
   return res.json();
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
-const DEFAULT_TWEAKS = /*EDITMODE-BEGIN*/{
-  "accent": "teal",
-  "density": "comfortable",
-  "monoFont": true
-}/*EDITMODE-END*/;
-
 function App() {
-  const [tweaks, setTweak] = useTweaks(DEFAULT_TWEAKS);
   const [screen, setScreen] = useState("start");
   const [url, setUrl] = useState("");
   const [repoData, setRepoData] = useState(null);
@@ -35,23 +27,6 @@ function App() {
   const [prefilledFilters, setPrefilledFilters] = useState({});
   const [activeRecord, setActiveRecord] = useState(null); // { record, prefix, formats }
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const accents = {
-      teal:   195,
-      indigo: 265,
-      amber:  65,
-      rose:   15,
-    };
-    const hue = accents[tweaks.accent] ?? 195;
-    root.style.setProperty("--accent",        `oklch(0.55 0.13 ${hue})`);
-    root.style.setProperty("--accent-hover",  `oklch(0.48 0.14 ${hue})`);
-    root.style.setProperty("--accent-soft",   `oklch(0.96 0.03 ${hue})`);
-    root.style.setProperty("--accent-border", `oklch(0.85 0.06 ${hue})`);
-    root.style.setProperty("--accent-text",   `oklch(0.40 0.13 ${hue})`);
-    root.style.setProperty("--row-pad", tweaks.density === "compact" ? "8px" : "12px");
-  }, [tweaks.accent, tweaks.density]);
 
   const goExplore = useCallback(async (rawUrl, broken) => {
     if (broken) {
@@ -185,31 +160,6 @@ function App() {
       )}
 
       <SiteFooter onNavigate={(s) => setScreen(s)} />
-
-      <TweaksPanel title="Tweaks">
-        <TweakSection title="Accent color">
-          <TweakRadio
-            value={tweaks.accent}
-            onChange={(v) => setTweak("accent", v)}
-            options={[
-              { value: "teal",   label: "Teal"   },
-              { value: "indigo", label: "Indigo" },
-              { value: "amber",  label: "Amber"  },
-              { value: "rose",   label: "Rose"   },
-            ]}
-          />
-        </TweakSection>
-        <TweakSection title="Table density">
-          <TweakRadio
-            value={tweaks.density}
-            onChange={(v) => setTweak("density", v)}
-            options={[
-              { value: "comfortable", label: "Comfortable" },
-              { value: "compact",     label: "Compact"     },
-            ]}
-          />
-        </TweakSection>
-      </TweaksPanel>
     </div>
   );
 }
@@ -401,22 +351,14 @@ function ErrorScreen({ error, onRetry, onHome }) {
 // ── Logo ──────────────────────────────────────────────────────────────────────
 function Logo({ size = 22 }) {
   return (
-    <svg
+    <img
       className="brand-logo"
-      width={size} height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="square"
-      strokeLinejoin="miter"
+      src="logo.png"
+      width={size}
+      height={size}
+      alt=""
       aria-hidden="true"
-    >
-      <rect x="3.5" y="13.5" width="13" height="7" />
-      <rect x="5.5" y="9.5"  width="13" height="7" fill="var(--bg)" />
-      <rect x="7.5" y="5.5"  width="13" height="7" fill="var(--bg)" stroke="var(--accent)" />
-      <path d="M14 3.5 L14 5.5 M12 4.5 L14 3.5 L16 4.5" stroke="var(--accent)" />
-    </svg>
+    />
   );
 }
 
