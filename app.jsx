@@ -7,6 +7,20 @@ const EXAMPLE_REPOS = [
   { label: "Zenodo", url: "https://zenodo.org/oai2d" },
 ];
 
+// ── Recent endpoints (localStorage) ──────────────────────────────────────────
+const RECENT_KEY = "oai_recent_endpoints";
+function saveRecentEndpoint(url) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    const updated = [url, ...stored.filter(u => u !== url)].slice(0, 5);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(updated));
+  } catch (_) {}
+}
+function loadRecentEndpoints() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
+  catch (_) { return []; }
+}
+
 // ── API helper ────────────────────────────────────────────────────────────────
 const NOCACHE = new URLSearchParams(location.search).has("nocache");
 
@@ -105,6 +119,7 @@ function App() {
         setsTruncated: setsRes.ok && setsRes.data.truncated,
         initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch,
       });
+      saveRecentEndpoint(baseUrl);
       setScreen("explore");
     } catch (e) {
       setError({ kind: "unreachable", url: baseUrl });
@@ -404,7 +419,7 @@ function TopBar({ screen, url, onHome, onChangeUrl, onNavigate }) {
           )}
           <button className={`topbar-link ${screen === "faq"     ? "is-active" : ""}`} onClick={() => onNavigate("faq")}>FAQ</button>
           <button className={`topbar-link ${screen === "imprint" ? "is-active" : ""}`} onClick={() => onNavigate("imprint")}>Imprint</button>
-          <a className="topbar-link" href="https://github.com/miku/metha" target="_blank" rel="noreferrer">GitHub ↗</a>
+          <a className="topbar-link" href="https://github.com/karkraeg/oai-explorer-standalone" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>
       </div>
     </header>
@@ -426,6 +441,11 @@ function FaqScreen({ onBack }) {
       a: "Repositories return a resumptionToken when the result set exceeds their page limit. The harvester replays the request with that token until it comes back empty." },
     { q: "Is this tool affiliated with any specific repository?",
       a: "No — it's a generic OAI-PMH 2.0 client. Any compliant endpoint should work; the example chips on the start screen are popular German and international repositories." },
+    { q: "Are requests cached?",
+      a: "Yes — the server caches every OAI-PMH response in a local SQLite database. The TTL is two hours." },
+    { q: "Can everybody see what I explored under 'RECENTLY USED'?",
+      a: "No, that's only shown to you."
+    }
   ];
 
   return (
@@ -465,17 +485,16 @@ function ImprintScreen({ onBack }) {
       <section className="doc-section">
         <h2 className="doc-h2">Operator</h2>
         <p className="doc-p mono">
-          [Your name / organisation]<br />
-          [Street address]<br />
-          [Postal code, city]<br />
+          Karl Krägelin<br />
+          Luhmannstrasse 1<br />
+          49088 Osnabrück<br />
           Germany
         </p>
       </section>
       <section className="doc-section">
         <h2 className="doc-h2">Contact</h2>
         <dl className="doc-dl">
-          <div><dt>Email</dt><dd className="mono">contact@example.org</dd></div>
-          <div><dt>Phone</dt><dd className="mono">+49 (0)30 0000 0000</dd></div>
+          <div><dt>Email</dt><dd className="mono">mail@karkraegelin.org</dd></div>
         </dl>
       </section>
       <section className="doc-section">
@@ -495,6 +514,16 @@ function ImprintScreen({ onBack }) {
           for it.
         </p>
       </section>
+      <section className="doc-section">
+        <h2 className="doc-h2">Cookies and local storage</h2>
+        <p className="doc-p">
+          This site sets <strong>no cookies</strong>. It stores one entry in your
+          browser's <code>localStorage</code> (key: <code>oai_recent_endpoints</code>)
+          to remember the last five OAI-PMH endpoints you visited. This data never
+          leaves your device and is not shared with any third party. You can clear it
+          at any time via your browser's developer tools.
+        </p>
+      </section>
     </main>
   );
 }
@@ -504,12 +533,12 @@ function SiteFooter({ onNavigate }) {
   return (
     <footer className="site-footer">
       <div className="footer-inner">
-        <div className="footer-brand mono">OAI-PMH Explorer · v0.4.2</div>
+        <div className="footer-brand mono">OAI-PMH Explorer · v1.0.0</div>
         <span className="footer-sep">·</span>
         <nav className="footer-links">
           <button onClick={() => onNavigate("faq")}>FAQ</button>
           <button onClick={() => onNavigate("imprint")}>Imprint</button>
-          <a href="https://github.com/miku/metha" target="_blank" rel="noreferrer">GitHub ↗</a>
+          <a href="https://github.com/karkraeg/oai-explorer-standalone" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>
       </div>
     </footer>
@@ -519,6 +548,7 @@ function SiteFooter({ onNavigate }) {
 // ── Screen 1 — Start ──────────────────────────────────────────────────────────
 function StartScreen({ onSubmit }) {
   const [val, setVal] = useState("");
+  const [recent, setRecent] = useState(() => loadRecentEndpoints());
   const inputRef = useRef(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -573,6 +603,24 @@ function StartScreen({ onSubmit }) {
             ))}
           </div>
         </div>
+
+        {recent.length > 0 && (
+          <div className="examples">
+            <span className="examples-label">Recently used</span>
+            <div className="chips">
+              {recent.map((u) => (
+                <button
+                  key={u}
+                  className="chip"
+                  onClick={() => onSubmit(u)}
+                  title={u}
+                >
+                  {u.replace(/^https?:\/\//, "")}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="hero-feat">
           <div className="feat">
@@ -1158,12 +1206,6 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
         </section>
       )}
 
-      {!loading && !fetchErr && (
-        <div className="record-cli">
-          <div className="cmd-label">Open this record in the OAI interface</div>
-          <div className="cmd-hint mono">The exact GetRecord URL is shown above for quick double-checking.</div>
-        </div>
-      )}
     </main>
   );
 }
