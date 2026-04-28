@@ -235,11 +235,12 @@ function SyncCommand({ baseURL, prefix, setSpec, from, until, variant = "sidebar
   const [copied, setCopied] = useState(false);
   const currentRequestUrl = useMemo(() => {
     const sp = new URLSearchParams({ verb: "ListIdentifiers" });
+    if (prefix) sp.set("metadataPrefix", prefix);
     if (setSpec) sp.set("set", setSpec);
     if (from) sp.set("from", from);
     if (until) sp.set("until", until);
     return `${baseURL}?${sp.toString()}`;
-  }, [baseURL, setSpec, from, until]);
+  }, [baseURL, prefix, setSpec, from, until]);
 
   const copy = () => {
     navigator.clipboard?.writeText(cmd);
