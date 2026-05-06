@@ -1054,7 +1054,6 @@ function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onC
               className={`combo-item ${!value ? "is-active" : ""}`}
               onClick={onClear}
             >
-              <span className="mono combo-item-spec" style={{ color: "var(--text-dim)" }}>—</span>
               <span className="combo-item-name">All sets (no filter)</span>
             </button>
             {options.length === 0 && (
@@ -1066,8 +1065,9 @@ function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onC
                 className={`combo-item ${o.spec === value ? "is-active" : ""}`}
                 onClick={() => onSelect(o)}
               >
-                <span className="mono combo-item-spec">{o.spec}</span>
-                <span className="combo-item-name">{o.name}</span>
+                <span className="combo-item-name">
+                  {o.name} <code className="combo-item-spec">{o.spec}</code>
+                </span>
               </button>
             ))}
           </div>
