@@ -10,7 +10,7 @@ load_env_file(__DIR__ . '/.env');
 
 define('APP_ENV',       env_string('APP_ENV', 'development')); // development|production
 define('CACHE_TTL',     env_int('CACHE_TTL', 7200, 0, 604800));
-define('FETCH_TIMEOUT', env_int('FETCH_TIMEOUT', 60, 1, 300));
+define('FETCH_TIMEOUT', env_int('FETCH_TIMEOUT', 120, 1, 600));
 define('OAI_NS',        'http://www.openarchives.org/OAI/2.0/');
 define('DC_NS',         'http://purl.org/dc/elements/1.1/');
 
@@ -99,7 +99,10 @@ if (!$dom->loadXML($raw)) {
 }
 
 $xp = new DOMXPath($dom);
-$xp->registerNamespace('oai',    OAI_NS);
+// Some endpoints (e.g. GDZ Göttingen) declare xmlns="https://..." instead of
+// the canonical "http://..." namespace. Detect what the document actually uses.
+$actual_oai_ns = $dom->documentElement?->namespaceURI ?: OAI_NS;
+$xp->registerNamespace('oai',    $actual_oai_ns);
 $xp->registerNamespace('dc',     DC_NS);
 $xp->registerNamespace('oai_dc', 'http://www.openarchives.org/OAI/2.0/oai_dc/');
 
