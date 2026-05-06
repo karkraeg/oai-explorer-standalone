@@ -534,7 +534,7 @@ function SiteFooter({ onNavigate }) {
   return (
     <footer className="site-footer">
       <div className="footer-inner">
-        <div className="footer-brand mono">OAI-PMH Explorer · v1.0.0</div>
+        <div className="footer-brand mono">OAI-PMH Explorer · v1.0.1</div>
         <span className="footer-sep">·</span>
         <nav className="footer-links">
           <button onClick={() => onNavigate("faq")}>FAQ</button>

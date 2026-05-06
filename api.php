@@ -11,6 +11,8 @@ load_env_file(__DIR__ . '/.env');
 define('APP_ENV',       env_string('APP_ENV', 'development')); // development|production
 define('CACHE_TTL',     env_int('CACHE_TTL', 7200, 0, 604800));
 define('FETCH_TIMEOUT', env_int('FETCH_TIMEOUT', 120, 1, 600));
+
+set_time_limit(FETCH_TIMEOUT + 10);
 define('OAI_NS',        'http://www.openarchives.org/OAI/2.0/');
 define('DC_NS',         'http://purl.org/dc/elements/1.1/');
 
