@@ -676,6 +676,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
   const [loading,          setLoading]          = useState(false);
   const [loadError,        setLoadError]        = useState(null);
   const [hoverRow,         setHoverRow]         = useState(null);
+  const [idQuery,          setIdQuery]          = useState("");
 
   const filteredSets = useMemo(() => {
     const q = setQuery.toLowerCase();
@@ -723,6 +724,12 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
   }, [url]);
 
   const triggerLoad = () => loadIdentifiers({ pfx: prefix, set: setSpec, fromDate: from, untilDate: until, token: "", history: [] });
+
+  const handleJumpToRecord = () => {
+    const id = idQuery.trim();
+    if (!id) return;
+    onOpenRecord({ identifier: id, datestamp: "", deleted: false }, prefix);
+  };
 
   const goNextPage = async () => {
     if (!resumptionToken || loading) return;
@@ -868,6 +875,25 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
                 <button className="btn btn-primary" onClick={triggerLoad} disabled={loading}>
                   {loading && <span className="loading-spinner loading-spinner--inline" aria-hidden="true" />}
                   {loading ? "Loading…" : "Load identifiers"}
+                </button>
+              </div>
+            </div>
+
+            <div className="filter-row">
+              <div className="filter" style={{ flex: 1 }}>
+                <label className="lbl">Jump to record by identifier <span className="lbl-opt">(optional)</span></label>
+                <input
+                  type="text"
+                  className="select mono"
+                  placeholder="oai:example.org:1234"
+                  value={idQuery}
+                  onChange={(e) => setIdQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleJumpToRecord()}
+                />
+              </div>
+              <div className="filter filter-action">
+                <button className="btn" onClick={handleJumpToRecord} disabled={!idQuery.trim()}>
+                  Go to record →
                 </button>
               </div>
             </div>
@@ -1142,8 +1168,8 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             {dc.title?.[0] || record.identifier}
           </h1>
           <div className="record-meta mono">
-            <span>datestamp: {record.datestamp}</span>
-            <span>deleted: {record.deleted ? "true" : "false"}</span>
+            <span>datestamp: {xmlData?.datestamp || record.datestamp}</span>
+            <span>deleted: {(xmlData ? xmlData.deleted : record.deleted) ? "true" : "false"}</span>
             {xmlData?.setSpecs?.length > 0 && (
               <span>setSpec: {xmlData.setSpecs[0]}</span>
             )}
