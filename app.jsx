@@ -33,6 +33,16 @@ async function fetchApi(action, baseUrl, extra = {}) {
   return res.json();
 }
 
+function buildExplorerUrl({ url, metadataPrefix, set, from, until, identifier }) {
+  const sp = new URLSearchParams({ url });
+  if (metadataPrefix) sp.set("metadataPrefix", metadataPrefix);
+  if (set)            sp.set("set", set);
+  if (from)           sp.set("from", from);
+  if (until)          sp.set("until", until);
+  if (identifier)     sp.set("identifier", identifier);
+  return `${location.origin}${location.pathname}?${sp}`;
+}
+
 function App() {
   const [screen, setScreen] = useState("start");
   const [url, setUrl] = useState("");
@@ -41,8 +51,33 @@ function App() {
   const [prefilledFilters, setPrefilledFilters] = useState({});
   const [activeRecord, setActiveRecord] = useState(null); // { record, prefix, formats }
   const [error, setError] = useState(null);
+  const [autoOpenRecord, setAutoOpenRecord] = useState(null); // { identifier, prefix } — set by initFromUrl
+  const [lastExploreUrl, setLastExploreUrl] = useState(null);
 
-  const goExplore = useCallback(async (rawUrl, broken) => {
+  // Restore state from explorer share URL on first load
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    const u = sp.get("url");
+    if (!u) return;
+    const identifier    = sp.get("identifier") || "";
+    const metadataPrefix = sp.get("metadataPrefix") || "";
+    const set   = sp.get("set")   || "";
+    const from  = sp.get("from")  || "";
+    const until = sp.get("until") || "";
+    if (identifier) setAutoOpenRecord({ identifier, prefix: metadataPrefix });
+    goExplore(u, null, { metadataPrefix, set, from, until });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-open a record after repo data loads (triggered by share URL with identifier=)
+  useEffect(() => {
+    if (screen === "explore" && repoData && autoOpenRecord) {
+      setActiveRecord({ record: { identifier: autoOpenRecord.identifier }, prefix: autoOpenRecord.prefix, formats: repoData.formats });
+      setScreen("record");
+      setAutoOpenRecord(null);
+    }
+  }, [screen, repoData, autoOpenRecord]);
+
+  const goExplore = useCallback(async (rawUrl, broken, overrideFilters = null) => {
     if (broken) {
       setError({ kind: broken, url: rawUrl });
       setScreen("error");
@@ -64,6 +99,14 @@ function App() {
         };
       }
     } catch (e) { /* not a valid URL, treat as-is */ }
+
+    // Allow explorer share URL params to override parsed OAI-PMH params
+    if (overrideFilters) {
+      if (overrideFilters.metadataPrefix !== undefined) filters.metadataPrefix = overrideFilters.metadataPrefix;
+      if (overrideFilters.set   !== undefined) filters.set   = overrideFilters.set;
+      if (overrideFilters.from  !== undefined) filters.from  = overrideFilters.from;
+      if (overrideFilters.until !== undefined) filters.until = overrideFilters.until;
+    }
 
     setUrl(baseUrl);
     setPrefilledFilters(filters);
@@ -121,6 +164,9 @@ function App() {
       });
       saveRecentEndpoint(baseUrl);
       setScreen("explore");
+      const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: initParams.prefix, set: initParams.set, from: initParams.from, until: initParams.until });
+      history.replaceState({}, "", exploreUrl);
+      setLastExploreUrl(exploreUrl);
     } catch (e) {
       setError({ kind: "unreachable", url: baseUrl });
       setScreen("error");
@@ -132,7 +178,7 @@ function App() {
       <TopBar
         screen={screen}
         url={url}
-        onHome={() => setScreen("start")}
+        onHome={() => { setScreen("start"); history.replaceState({}, "", location.pathname); }}
         onChangeUrl={(u) => { goExplore(u); }}
         onNavigate={(s) => setScreen(s)}
       />
@@ -148,7 +194,12 @@ function App() {
           url={url}
           repoData={repoData}
           prefilledFilters={prefilledFilters}
-          onOpenRecord={(record, prefix) => { setActiveRecord({ record, prefix, formats: repoData.formats }); setScreen("record"); }}
+          onOpenRecord={(record, prefix) => {
+            setActiveRecord({ record, prefix, formats: repoData.formats });
+            setScreen("record");
+            history.replaceState({}, "", buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: prefix }));
+          }}
+          onUrlChange={(u) => setLastExploreUrl(u)}
         />
       )}
       {screen === "record" && activeRecord && (
@@ -157,7 +208,10 @@ function App() {
           record={activeRecord.record}
           prefix={activeRecord.prefix}
           formats={activeRecord.formats || []}
-          onBack={() => setScreen("explore")}
+          onBack={() => {
+            setScreen("explore");
+            if (lastExploreUrl) history.replaceState({}, "", lastExploreUrl);
+          }}
         />
       )}
       {screen === "faq" && (
@@ -652,7 +706,7 @@ function StartScreen({ onSubmit }) {
 }
 
 // ── Screen 2 — Explore ────────────────────────────────────────────────────────
-function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
+function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlChange }) {
   const { identify, formats, sets, setsTruncated,
           initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch } = repoData;
 
@@ -676,6 +730,8 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
   const [loading,          setLoading]          = useState(false);
   const [loadError,        setLoadError]        = useState(null);
   const [hoverRow,         setHoverRow]         = useState(null);
+  const [idQuery,          setIdQuery]          = useState("");
+  const [linkCopied,       setLinkCopied]       = useState(false);
 
   const filteredSets = useMemo(() => {
     const q = setQuery.toLowerCase();
@@ -704,6 +760,11 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
         setPageHistory(history);
         setPageIndex(history.length);
         setLoaded(true);
+        if (!token) {
+          const explorerUrl = buildExplorerUrl({ url, metadataPrefix: pfx, set, from: fromDate, until: untilDate });
+          window.history.replaceState({}, "", explorerUrl);
+          onUrlChange?.(explorerUrl);
+        }
       } else if (res.oai_error === "noRecordsMatch") {
         setRecords([]);
         setTotal(null);
@@ -723,6 +784,12 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
   }, [url]);
 
   const triggerLoad = () => loadIdentifiers({ pfx: prefix, set: setSpec, fromDate: from, untilDate: until, token: "", history: [] });
+
+  const handleJumpToRecord = () => {
+    const id = idQuery.trim();
+    if (!id) return;
+    onOpenRecord({ identifier: id, datestamp: "", deleted: false }, prefix);
+  };
 
   const goNextPage = async () => {
     if (!resumptionToken || loading) return;
@@ -871,6 +938,25 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
                 </button>
               </div>
             </div>
+
+            <div className="filter-row">
+              <div className="filter" style={{ flex: 1 }}>
+                <label className="lbl">Jump to record by identifier <span className="lbl-opt">(optional)</span></label>
+                <input
+                  type="text"
+                  className="select mono"
+                  placeholder="oai:example.org:1234"
+                  value={idQuery}
+                  onChange={(e) => setIdQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleJumpToRecord()}
+                />
+              </div>
+              <div className="filter filter-action">
+                <button className="btn" onClick={handleJumpToRecord} disabled={!idQuery.trim()}>
+                  Go to record →
+                </button>
+              </div>
+            </div>
           </div>
 
           <SyncCommand
@@ -901,6 +987,18 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord }) {
                   "No data loaded"
                 )}
               </div>
+              {loaded && (
+                <button
+                  className="cmd-copy-mini"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(buildExplorerUrl({ url, metadataPrefix: prefix, set: setSpec, from, until }));
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 1500);
+                  }}
+                >
+                  {linkCopied ? "✓ Copied" : "Copy link"}
+                </button>
+              )}
             </div>
 
             <div className="table-wrap">
@@ -1083,6 +1181,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   const [loading,  setLoading]  = useState(true);
   const [fetchErr, setFetchErr] = useState(null);
   const [xmlCopied, setXmlCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [currentPrefix, setCurrentPrefix] = useState(prefix || "oai_dc");
   const recordOaiUrl = useMemo(() => {
     const sp = new URLSearchParams({
@@ -1101,6 +1200,10 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   useEffect(() => {
     setCurrentPrefix(prefix || "oai_dc");
   }, [record.identifier, prefix]);
+
+  useEffect(() => {
+    history.replaceState({}, "", buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }));
+  }, [url, record.identifier, currentPrefix]);
 
   useEffect(() => {
     setLoading(true);
@@ -1142,8 +1245,8 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             {dc.title?.[0] || record.identifier}
           </h1>
           <div className="record-meta mono">
-            <span>datestamp: {record.datestamp}</span>
-            <span>deleted: {record.deleted ? "true" : "false"}</span>
+            <span>datestamp: {xmlData?.datestamp || record.datestamp}</span>
+            <span>deleted: {(xmlData ? xmlData.deleted : record.deleted) ? "true" : "false"}</span>
             {xmlData?.setSpecs?.length > 0 && (
               <span>setSpec: {xmlData.setSpecs[0]}</span>
             )}
@@ -1153,6 +1256,17 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             <a href={recordOaiUrl} target="_blank" rel="noopener noreferrer">
               {recordOaiUrl}
             </a>
+            <button
+              className="cmd-copy-mini"
+              style={{ flexShrink: 0 }}
+              onClick={() => {
+                navigator.clipboard?.writeText(buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }));
+                setLinkCopied(true);
+                setTimeout(() => setLinkCopied(false), 1500);
+              }}
+            >
+              {linkCopied ? "✓ Copied" : "Copy link"}
+            </button>
           </div>
         </div>
         <div className="record-actions">
