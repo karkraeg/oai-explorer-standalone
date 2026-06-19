@@ -1316,7 +1316,10 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             <div className="code-tabs">
               <span className="code-tab is-active">XML</span>
             </div>
-            <div className="code-meta mono">{xml.length.toLocaleString()} bytes</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="code-meta mono">{xml.length.toLocaleString()} bytes</div>
+              <button className="cmd-copy-mini" onClick={copyXml}>{xmlCopied ? "✓ Copied" : "Copy"}</button>
+            </div>
           </div>
           <OutlineBar sections={sections} />
           <pre className="code"><code dangerouslySetInnerHTML={{ __html: injectAnchors(highlightXml(xml), sections) }} /></pre>
