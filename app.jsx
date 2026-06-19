@@ -229,7 +229,25 @@ function App() {
       )}
 
       <SiteFooter onNavigate={(s) => setScreen(s)} />
+      <ScrollToTopButton />
     </div>
+  );
+}
+
+function ScrollToTopButton() {
+  const [visible, setVisible] = React.useState(false);
+  React.useEffect(() => {
+    const onScroll = () => setVisible(window.scrollY > 400);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  if (!visible) return null;
+  return (
+    <button
+      className="scroll-to-top"
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      aria-label="Back to top"
+    >↑</button>
   );
 }
 
@@ -1182,6 +1200,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   const [fetchErr, setFetchErr] = useState(null);
   const [xmlCopied, setXmlCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [oaiUrlCopied, setOaiUrlCopied] = useState(false);
   const [currentPrefix, setCurrentPrefix] = useState(prefix || "oai_dc");
   const recordOaiUrl = useMemo(() => {
     const sp = new URLSearchParams({
@@ -1261,12 +1280,23 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
               className="cmd-copy-mini"
               style={{ flexShrink: 0 }}
               onClick={() => {
+                navigator.clipboard?.writeText(recordOaiUrl);
+                setOaiUrlCopied(true);
+                setTimeout(() => setOaiUrlCopied(false), 1500);
+              }}
+            >
+              {oaiUrlCopied ? "✓ Copied" : "Copy OAI URL"}
+            </button>
+            <button
+              className="cmd-copy-mini"
+              style={{ flexShrink: 0 }}
+              onClick={() => {
                 navigator.clipboard?.writeText(buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }));
                 setLinkCopied(true);
                 setTimeout(() => setLinkCopied(false), 1500);
               }}
             >
-              {linkCopied ? "✓ Copied" : "Copy link"}
+              {linkCopied ? "✓ Copied" : "Copy Explorer link"}
             </button>
           </div>
         </div>

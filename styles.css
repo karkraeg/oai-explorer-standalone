@@ -1891,3 +1891,27 @@ input[type="date"].select {
     display: none;
   }
 }
+
+.scroll-to-top {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #2a3340;
+  background: #161e2a;
+  color: #8b96a8;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.scroll-to-top:hover {
+  color: #d8dee9;
+  border-color: #4a5568;
+  background: #1e2a3a;
+}
