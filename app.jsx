@@ -1219,6 +1219,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
 
   const xml = xmlData?.xml || "";
   const dc  = xmlData?.dc  || {};
+  const sections = useMemo(() => detectSections(xml), [xml]);
 
   const copyXml = () => {
     navigator.clipboard?.writeText(xml);
@@ -1317,11 +1318,56 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             </div>
             <div className="code-meta mono">{xml.length.toLocaleString()} bytes</div>
           </div>
-          <pre className="code"><code dangerouslySetInnerHTML={{ __html: highlightXml(xml) }} /></pre>
+          <OutlineBar sections={sections} />
+          <pre className="code"><code dangerouslySetInnerHTML={{ __html: injectAnchors(highlightXml(xml), sections) }} /></pre>
         </section>
       )}
 
     </main>
+  );
+}
+
+// ── XML section outline ───────────────────────────────────────────────────────
+const METS_SECTIONS = ['metsHdr','dmdSec','amdSec','fileSec','structMap','structLink','behaviorSec'];
+const MODS_SECTIONS = ['titleInfo','name','originInfo','physicalDescription','abstract','subject','relatedItem','location','accessCondition','recordInfo'];
+
+function detectSections(xml) {
+  if (!xml) return null;
+  const isMets = xml.includes('www.loc.gov/METS/');
+  const isMods = xml.includes('www.loc.gov/mods');
+  if (!isMets && !isMods) return null;
+  const candidates = isMets ? METS_SECTIONS : MODS_SECTIONS;
+  const found = candidates.filter(name => new RegExp(`<[\\w]*:?${name}[\\s>/]`).test(xml));
+  return found.length ? found : null;
+}
+
+function injectAnchors(html, sections) {
+  if (!sections) return html;
+  let result = html;
+  for (const name of sections) {
+    const re = new RegExp(`(<span class="x-tag">[\\w]*:?${name}</span>)`);
+    result = result.replace(re, `<span id="sec-${name}" class="sec-anchor"></span>$1`);
+  }
+  return result;
+}
+
+function OutlineBar({ sections }) {
+  if (!sections?.length) return null;
+  return (
+    <nav className="xml-outline" aria-label="Document sections">
+      <span className="xml-outline-label">Jump to</span>
+      {sections.map(name => (
+        <a
+          key={name}
+          className="xml-outline-link"
+          href={`#sec-${name}`}
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById(`sec-${name}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }}
+        >{name}</a>
+      ))}
+    </nav>
   );
 }
 

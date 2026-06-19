@@ -1567,6 +1567,40 @@ input[type="date"].select {
   color: #6b7585;
 }
 
+.xml-outline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 7px 14px;
+  background: #0d1420;
+  border-bottom: 1px solid #2a3340;
+  font-family: var(--font-mono);
+}
+.xml-outline-label {
+  font-size: 10px;
+  color: #6b7585;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 4px;
+}
+.xml-outline-link {
+  font-size: 11.5px;
+  color: #8b96a8;
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+.xml-outline-link:hover {
+  color: #d8dee9;
+  border-color: #2a3340;
+  background: #161e2a;
+}
+.sec-anchor {
+  pointer-events: none;
+}
+
 .code {
   margin: 0;
   padding: 18px 20px;
