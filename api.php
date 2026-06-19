@@ -268,10 +268,14 @@ function parse_record(DOMXPath $xp): array
     $rec_nodes = $xp->query('//oai:record');
     $raw_xml   = '';
     if ($rec_nodes && $rec_nodes->length > 0) {
+        // Serialize first, then reload with preserveWhiteSpace=false so
+        // formatOutput can re-indent minified content (e.g. METS payloads).
+        $tmp = new DOMDocument();
+        $tmp->appendChild($tmp->importNode($rec_nodes->item(0), true));
         $out_dom = new DOMDocument('1.0', 'UTF-8');
+        $out_dom->preserveWhiteSpace = false;
         $out_dom->formatOutput = true;
-        $node = $out_dom->importNode($rec_nodes->item(0), true);
-        $out_dom->appendChild($node);
+        $out_dom->loadXML($tmp->saveXML($tmp->documentElement));
         $raw_xml = $out_dom->saveXML($out_dom->documentElement);
     }
 
