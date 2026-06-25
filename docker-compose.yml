@@ -36,7 +36,7 @@ services:
       FETCH_TIMEOUT: 120
       CACHE_TTL: 7200
       OAI_USER_AGENT: OAI-PMH-Explorer/0.5
-      HARVEST_DELAY_MS: 1000
+      HARVEST_DELAY_MS: 3000
       HARVEST_PAGE_SIZE: 100
       HARVEST_MAX_SCOPE_ENTRIES: 1000000
       HARVEST_MAX_INACTIVE_DAYS: 90
@@ -50,6 +50,8 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_DB: oai_explorer
       POSTGRES_USER: oai

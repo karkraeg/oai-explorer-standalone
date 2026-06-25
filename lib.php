@@ -100,6 +100,7 @@ function migrate_db(PDO $db): void
                 last_full_harvest_at INTEGER,
                 last_delta_harvest_at INTEGER,
                 last_accessed_at INTEGER NOT NULL,
+                expected_total INTEGER,
                 entry_count INTEGER NOT NULL DEFAULT 0,
                 UNIQUE (base_url, metadata_prefix, set_spec)
             );
@@ -130,6 +131,7 @@ function migrate_db(PDO $db): void
             CREATE INDEX IF NOT EXISTS idx_entries_scope_deleted ON harvest_entries(scope_id, deleted);
             CREATE INDEX IF NOT EXISTS idx_scopes_accessed ON harvest_scopes(last_accessed_at);
             CREATE INDEX IF NOT EXISTS idx_jobs_status ON harvest_jobs(status, created_at);
+            ALTER TABLE harvest_scopes ADD COLUMN IF NOT EXISTS expected_total INTEGER;
         ");
         return;
     }
@@ -148,12 +150,13 @@ function migrate_db(PDO $db): void
             granularity TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'new',
             last_datestamp TEXT NOT NULL DEFAULT '',
-            last_full_harvest_at INTEGER,
-            last_delta_harvest_at INTEGER,
-            last_accessed_at INTEGER NOT NULL,
-            entry_count INTEGER NOT NULL DEFAULT 0,
-            UNIQUE (base_url, metadata_prefix, set_spec)
-        );
+                last_full_harvest_at INTEGER,
+                last_delta_harvest_at INTEGER,
+                last_accessed_at INTEGER NOT NULL,
+                expected_total INTEGER,
+                entry_count INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (base_url, metadata_prefix, set_spec)
+            );
         CREATE TABLE IF NOT EXISTS harvest_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             scope_id INTEGER NOT NULL REFERENCES harvest_scopes(id) ON DELETE CASCADE,
@@ -182,6 +185,17 @@ function migrate_db(PDO $db): void
         CREATE INDEX IF NOT EXISTS idx_scopes_accessed ON harvest_scopes(last_accessed_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status ON harvest_jobs(status, created_at);
     ");
+    ensure_sqlite_column($db, 'harvest_scopes', 'expected_total', 'INTEGER');
+}
+
+function ensure_sqlite_column(PDO $db, string $table, string $column, string $definition): void
+{
+    if (db_driver($db) !== 'sqlite') return;
+    $stmt = $db->query("PRAGMA table_info({$table})");
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (($row['name'] ?? '') === $column) return;
+    }
+    $db->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
 }
 
 function get_cached(PDO $db, string $key): ?string
@@ -423,9 +437,12 @@ function enqueue_harvest(PDO $db, int $scope_id, string $type): void
     $stmt->execute([$scope_id, $type, 'queued', time()]);
 }
 
-function enqueue_after_list_identifiers(PDO $db, string $base_url, string $prefix, string $set_spec): void
+function enqueue_after_list_identifiers(PDO $db, string $base_url, string $prefix, string $set_spec, ?int $expected_total = null): void
 {
     $scope_id = get_or_create_scope($db, $base_url, $prefix, $set_spec);
+    if ($expected_total !== null) {
+        $db->prepare('UPDATE harvest_scopes SET expected_total = ? WHERE id = ?')->execute([$expected_total, $scope_id]);
+    }
     $scope = get_scope($db, $scope_id);
     if (!$scope) return;
 
@@ -459,6 +476,10 @@ function local_identifier_page(PDO $db, int $scope_id, int $offset = 0): ?array
 {
     $scope = get_scope($db, $scope_id);
     if (!$scope || ($scope['status'] ?? '') !== 'complete') return null;
+    $expected_total = $scope['expected_total'] ?? null;
+    if ($expected_total !== null && $expected_total !== '' && (int)$scope['entry_count'] < (int)$expected_total) {
+        return null;
+    }
 
     $limit = HARVEST_PAGE_SIZE;
     $stmt = $db->prepare('SELECT identifier, datestamp, deleted FROM harvest_entries WHERE scope_id = ? ORDER BY datestamp DESC, identifier LIMIT ? OFFSET ?');
@@ -487,6 +508,7 @@ function try_local_list_identifiers(PDO $db, string $base_url, string $prefix, s
 function upsert_harvest_entries(PDO $db, int $scope_id, array $identifiers): void
 {
     $now = time();
+    $is_pgsql = db_driver($db) === 'pgsql';
     $stmt = $db->prepare('INSERT INTO harvest_entries (scope_id, identifier, datestamp, deleted, set_specs_json, seen_at)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (scope_id, identifier) DO UPDATE SET
@@ -496,14 +518,13 @@ function upsert_harvest_entries(PDO $db, int $scope_id, array $identifiers): voi
             seen_at = excluded.seen_at');
     foreach ($identifiers as $id) {
         if (empty($id['identifier'])) continue;
-        $stmt->execute([
-            $scope_id,
-            (string)$id['identifier'],
-            (string)($id['datestamp'] ?? ''),
-            !empty($id['deleted']),
-            json_encode($id['setSpecs'] ?? [], JSON_UNESCAPED_SLASHES),
-            $now,
-        ]);
+        $stmt->bindValue(1, $scope_id, PDO::PARAM_INT);
+        $stmt->bindValue(2, (string)$id['identifier']);
+        $stmt->bindValue(3, (string)($id['datestamp'] ?? ''));
+        $stmt->bindValue(4, !empty($id['deleted']) ? ($is_pgsql ? 'true' : 1) : ($is_pgsql ? 'false' : 0));
+        $stmt->bindValue(5, json_encode($id['setSpecs'] ?? [], JSON_UNESCAPED_SLASHES));
+        $stmt->bindValue(6, $now, PDO::PARAM_INT);
+        $stmt->execute();
     }
 }
 
@@ -565,6 +586,7 @@ function process_harvest_job(PDO $db, array $job): void
 
         $data = $parsed['data'];
         $ids = $data['identifiers'] ?? [];
+        $total = $data['total'] ?? null;
         upsert_harvest_entries($db, (int)$scope['id'], $ids);
         refresh_scope_stats($db, (int)$scope['id']);
 
@@ -581,6 +603,10 @@ function process_harvest_job(PDO $db, array $job): void
         $job['entries_seen'] = $seen;
 
         if (!$token) {
+            $expected_total = $total ?? ($scope['expected_total'] ?? null);
+            if ($job['type'] === 'full' && $expected_total !== null && $expected_total !== '' && $seen < (int)$expected_total) {
+                throw new RuntimeException("Harvest ended early after {$seen} of {$expected_total} reported identifiers");
+            }
             complete_harvest_job($db, (int)$job['id'], (int)$scope['id'], (string)$job['type']);
             return;
         }

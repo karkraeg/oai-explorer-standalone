@@ -48,7 +48,7 @@ if ($action === 'listIdentifiers' && $db !== null) {
         $until = (string)($_GET['until'] ?? '');
         $page = try_local_list_identifiers($db, $base_url, $prefix, $set_spec, $from, $until);
         if ($page !== null) {
-            enqueue_after_list_identifiers($db, $base_url, $prefix, $set_spec);
+            enqueue_after_list_identifiers($db, $base_url, $prefix, $set_spec, $page['total'] ?? null);
             echo json_encode(['ok' => true, 'data' => $page]);
             exit;
         }
@@ -102,7 +102,7 @@ if ($action === 'listIdentifiers' && $db !== null && empty($_GET['resumptionToke
     try {
         $prefix = (string)($params['metadataPrefix'] ?? 'oai_dc');
         $set_spec = (string)($params['set'] ?? '');
-        enqueue_after_list_identifiers($db, $base_url, $prefix, $set_spec);
+        enqueue_after_list_identifiers($db, $base_url, $prefix, $set_spec, $parsed['data']['total'] ?? null);
         $parsed['data']['cacheMode'] = 'live';
     } catch (Throwable $e) {}
 }
