@@ -1352,7 +1352,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             </div>
           </div>
           <OutlineBar sections={sections} />
-          <pre className="code"><code dangerouslySetInnerHTML={{ __html: injectAnchors(highlightXml(xml), sections) }} /></pre>
+          <pre className="code"><code dangerouslySetInnerHTML={{ __html: linkXmlUrls(injectAnchors(highlightXml(xml), sections)) }} /></pre>
         </section>
       )}
 
@@ -1420,6 +1420,25 @@ function highlightXml(xml) {
     }
   );
   return s;
+}
+
+function decodeHtmlEntities(value) {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = value;
+  return textarea.value;
+}
+
+function linkXmlUrls(html) {
+  return html
+    .split(/(<[^>]+>)/g)
+    .map((part) => {
+      if (part.startsWith("<")) return part;
+      return part.replace(/https?:\/\/[^\s<>"']+/g, (url) => {
+        const href = decodeHtmlEntities(url);
+        return `<a class="xml-url" href="${href.replace(/"/g, "&quot;")}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+    })
+    .join("");
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);

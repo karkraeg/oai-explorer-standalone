@@ -8,7 +8,8 @@ Dieses Repository enthaelt eine kleine Web-App mit:
 
 - Frontend in `index.html`, `app.jsx`, `styles.css`
 - PHP-Backend in `api.php` als Proxy/Parser für OAI-PMH
-- SQLite-Cache in `cache.sqlite` (wird automatisch genutzt)
+- Kurzzeit-Response-Cache und Background-Identifier-Harvest in SQLite oder Postgres
+- Docker-Compose-Stack mit Nginx, PHP-FPM, Worker und Postgres
 
 Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webpack).
 
@@ -18,15 +19,19 @@ Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webp
 2. Frontend ruft `api.php` mit `action`-Parametern auf.
 3. `api.php` spricht den entfernten OAI-PMH-Endpoint an (`Identify`, `ListMetadataFormats`, `ListSets`, `ListIdentifiers`, `GetRecord`).
 4. XML wird serverseitig geparst und als JSON an das Frontend geliefert.
-5. Antworten werden per URL-Hash im SQLite-Cache zwischengespeichert.
+5. Kleine Antworten werden per URL-Hash zwischengespeichert.
+6. `ListIdentifiers` startet im Hintergrund einen langsamen Full Harvest fuer Identifier/Header-Daten.
+7. Nach fertigem Full Harvest kann die App lokal ueber Identifier paginieren; spaetere Updates laufen als Delta-Harvest ab `last_datestamp`.
+
+Wichtig: Ganze Records und XML-Payloads werden nicht im Harvest-Cache gespeichert.
 
 ## Voraussetzungen
 
 - PHP 8.x empfohlen
-- PHP-Extensions: `dom`, `pdo_sqlite` (optional `curl`, sonst Fallback via `file_get_contents`)
+- PHP-Extensions: `dom`, `pdo_sqlite` oder `pdo_pgsql` (optional `curl`, sonst Fallback via `file_get_contents`)
 - Internetzugang zu den OAI-PMH-Endpoints
 
-## Development Server starten
+## Development Server starten (einfach)
 
 Im Projekt-Root ausfuehren:
 
@@ -42,6 +47,25 @@ http://127.0.0.1:8000
 
 Hinweis: Ein reiner statischer Server reicht nicht, da `api.php` serverseitig ausgefuehrt werden muss.
 
+## Docker-Compose-Stack starten
+
+```bash
+docker compose up --build
+```
+
+Dann im Browser oeffnen:
+
+```text
+http://127.0.0.1:8080
+```
+
+Der Stack startet:
+
+- `nginx`: HTTP-Einstieg
+- `php`: PHP-FPM fuer `api.php`
+- `worker`: Background-Harvest fuer Identifier
+- `postgres`: Harvest- und Cache-Datenbank
+
 ## .env Konfiguration (Timeouts etc.)
 
 `api.php` liest optional eine `.env` im Projekt-Root.
@@ -52,6 +76,9 @@ Beispiel:
 APP_ENV=development
 FETCH_TIMEOUT=60
 CACHE_TTL=7200
+OAI_USER_AGENT=OAI-PMH-Explorer/0.5
+HARVEST_DELAY_MS=1000
+HARVEST_MAX_SCOPE_ENTRIES=1000000
 ```
 
 Bedeutung:
@@ -59,15 +86,24 @@ Bedeutung:
 - `APP_ENV`: `development` oder `production`
 - `FETCH_TIMEOUT`: Timeout fuer OAI-HTTP-Requests in Sekunden
 - `CACHE_TTL`: Cache-Lebensdauer in Sekunden
+- `OAI_USER_AGENT`: User-Agent fuer OAI-Requests
+- `DATABASE_URL`: optionaler PDO-DSN; leer nutzt SQLite in `cache.sqlite`
+- `HARVEST_DELAY_MS`: Pause zwischen Harvest-Seiten
+- `HARVEST_MAX_SCOPE_ENTRIES`: Maximalzahl Identifier pro Harvest-Scope
+- `HARVEST_MAX_INACTIVE_DAYS`: inaktive Scopes werden geloescht
 
 ## Projektstruktur
 
 ```text
 .
 |- api.php
+|- lib.php
+|- worker.php
 |- app.jsx
 |- index.html
 |- styles.css
+|- docker-compose.yml
+|- Dockerfile
 |- cache.sqlite
 ```
 
@@ -109,13 +145,21 @@ Wichtig: Der `nocache`-Parameter ist nur aktiv, wenn `APP_ENV != production`.
 - Bei nicht erreichbaren Hosts liefert die API `kind: "unreachable"`.
 - Bei nicht-OAI/XML-Antworten liefert die API `kind: "not-oai"`.
 - `ListSets` kann serverseitig abgeschnitten sein; das wird als `truncated` zurueckgegeben.
+- Full Harvest speichert nur Identifier, Datestamp, Deleted-Status und SetSpecs.
+- `GetRecord`-XML wird nicht langfristig gecacht.
 
 ## Deployment (einfach)
 
-Die App laeuft auf jedem Webserver mit PHP-Unterstuetzung. Wichtig:
+Die App laeuft auf jedem Webserver mit PHP-Unterstuetzung. Fuer Background-Harvest wird der Docker-Compose-Stack oder ein eigener PHP-CLI-Worker empfohlen:
+
+```bash
+php worker.php
+```
+
+Wichtig:
 
 - Dokumentenroot auf dieses Verzeichnis
-- Schreibrechte fuer `cache.sqlite` (falls Cache verwendet werden soll)
+- Schreibrechte fuer `cache.sqlite` bei SQLite-Fallback oder Postgres-Verbindung via `DATABASE_URL`
 
 ## Lizenz
 

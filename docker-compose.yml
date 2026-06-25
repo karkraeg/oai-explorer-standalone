@@ -1,0 +1,66 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - php
+
+  php:
+    build: .
+    environment:
+      APP_ENV: production
+      DATABASE_URL: pgsql:host=postgres;port=5432;dbname=oai_explorer
+      DATABASE_USER: oai
+      DATABASE_PASSWORD: oai
+      FETCH_TIMEOUT: 120
+      CACHE_TTL: 7200
+      OAI_USER_AGENT: OAI-PMH-Explorer/0.5
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: php worker.php
+    environment:
+      APP_ENV: production
+      DATABASE_URL: pgsql:host=postgres;port=5432;dbname=oai_explorer
+      DATABASE_USER: oai
+      DATABASE_PASSWORD: oai
+      FETCH_TIMEOUT: 120
+      CACHE_TTL: 7200
+      OAI_USER_AGENT: OAI-PMH-Explorer/0.5
+      HARVEST_DELAY_MS: 1000
+      HARVEST_PAGE_SIZE: 100
+      HARVEST_MAX_SCOPE_ENTRIES: 1000000
+      HARVEST_MAX_INACTIVE_DAYS: 90
+      WORKER_SLEEP_SECONDS: 10
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: oai_explorer
+      POSTGRES_USER: oai
+      POSTGRES_PASSWORD: oai
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oai -d oai_explorer"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

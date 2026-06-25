@@ -1628,6 +1628,15 @@ input[type="date"].select {
 .x-val {
   color: oklch(0.78 0.1 145);
 } /* greenish */
+.xml-url {
+  color: oklch(0.82 0.12 220);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.xml-url:hover {
+  color: oklch(0.9 0.09 220);
+}
 .x-punct {
   color: #6b7585;
 }
