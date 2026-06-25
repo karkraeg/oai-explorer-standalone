@@ -1,6 +1,8 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
+const APP_VERSION = "2.0.0";
+
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
   { label: "arXiv.org", url: "https://export.arxiv.org/oai2" },
@@ -219,6 +221,9 @@ function App() {
       )}
       {screen === "imprint" && (
         <ImprintScreen onBack={() => setScreen(url ? "explore" : "start")} />
+      )}
+      {screen === "changelog" && (
+        <ChangelogScreen onBack={() => setScreen(url ? "explore" : "start")} />
       )}
       {screen === "error" && error && (
         <ErrorScreen
@@ -544,6 +549,59 @@ function FaqScreen({ onBack }) {
   );
 }
 
+// ── Changelog ─────────────────────────────────────────────────────────────────
+function ChangelogScreen({ onBack }) {
+  const entries = [
+    {
+      version: "2.0.0",
+      date: "2026-06-25",
+      changes: [
+        "Added Docker Compose stack with Nginx, PHP-FPM, Worker, and Postgres.",
+        "Added background Full Harvest for OAI identifiers with slow page-by-page fetching.",
+        "Added local identifier pagination after completed harvests.",
+        "Added Delta Harvest from last datestamp for stale harvested scopes.",
+        "Kept record XML out of long-term harvest storage.",
+        "Made URLs inside record XML clickable.",
+      ],
+    },
+    {
+      version: "1.2.0",
+      date: "2026-06-24",
+      changes: [
+        "Added record sharing with metadataPrefix and identifier in the Explorer URL.",
+        "Improved Record view with direct OAI URL copy controls.",
+      ],
+    },
+  ];
+
+  return (
+    <main className="screen screen-doc">
+      <button className="back-link" onClick={onBack}>
+        <span className="back-arrow">←</span> Back
+      </button>
+      <div className="doc-eyebrow">Release notes</div>
+      <h1 className="doc-title">Changelog</h1>
+      <p className="doc-lede">Notable changes to OAI-PMH Explorer.</p>
+
+      <div className="changelog">
+        {entries.map((entry) => (
+          <section key={entry.version} className="changelog-entry">
+            <div className="changelog-version mono">v{entry.version}</div>
+            <div>
+              <h2 className="doc-h2">{entry.date}</h2>
+              <ul className="changelog-list">
+                {entry.changes.map((change) => (
+                  <li key={change}>{change}</li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ))}
+      </div>
+    </main>
+  );
+}
+
 // ── Imprint ───────────────────────────────────────────────────────────────────
 function ImprintScreen({ onBack }) {
   return (
@@ -606,10 +664,16 @@ function SiteFooter({ onNavigate }) {
   return (
     <footer className="site-footer">
       <div className="footer-inner">
-        <div className="footer-brand mono">OAI-PMH Explorer · v1.2.0</div>
+        <div className="footer-brand mono">
+          OAI-PMH Explorer ·{" "}
+          <button className="footer-version" onClick={() => onNavigate("changelog")}>
+            v{APP_VERSION}
+          </button>
+        </div>
         <span className="footer-sep">·</span>
         <nav className="footer-links">
           <button onClick={() => onNavigate("faq")}>FAQ</button>
+          <button onClick={() => onNavigate("changelog")}>Changelog</button>
           <button onClick={() => onNavigate("imprint")}>Imprint</button>
           <a href="https://github.com/karkraeg/oai-explorer-standalone" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>

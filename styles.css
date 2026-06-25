@@ -249,6 +249,33 @@ code,
   border: 1px solid var(--border);
 }
 
+.changelog {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--border);
+}
+.changelog-entry {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 24px;
+  padding: 24px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.changelog-version {
+  color: var(--accent-text);
+  font-size: 12px;
+  padding-top: 2px;
+}
+.changelog-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+.changelog-list li {
+  margin: 0 0 4px;
+}
+
 /* ---------- Footer ---------- */
 .site-footer {
   margin-top: auto;
@@ -271,6 +298,19 @@ code,
   color: var(--text-dim);
   letter-spacing: 0.02em;
   margin-right: 8px;
+}
+.footer-version {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent-text);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+}
+.footer-version:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .footer-sep {
   color: var(--border-strong);
@@ -1889,6 +1929,10 @@ input[type="date"].select {
   }
   .hero-title {
     font-size: 36px;
+  }
+  .changelog-entry {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
   .record-head {
     flex-direction: column;
