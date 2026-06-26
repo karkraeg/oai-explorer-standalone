@@ -1,7 +1,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -601,6 +601,14 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "2.0.1",
+      date: "2026-06-26",
+      changes: [
+        "Fixed cached endpoint starts so identifier loading begins automatically after the instant summary view.",
+        "Added permanent repository summaries for known endpoints without storing identifier pages or stale resumption tokens.",
+      ],
+    },
     {
       version: "2.0.0",
       date: "2026-06-25",
