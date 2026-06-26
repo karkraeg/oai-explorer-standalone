@@ -863,6 +863,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   const [hoverRow,         setHoverRow]         = useState(null);
   const [idQuery,          setIdQuery]          = useState("");
   const [linkCopied,       setLinkCopied]       = useState(false);
+  const autoLoadStarted = useRef(false);
 
   useEffect(() => {
     if (!loaded && !loading) {
@@ -927,6 +928,12 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   }, [url]);
 
   const triggerLoad = () => loadIdentifiers({ pfx: prefix, set: setSpec, fromDate: from, untilDate: until, token: "", history: [] });
+
+  useEffect(() => {
+    if (autoLoadStarted.current || loaded || loading || loadError || initNoRecordsMatch) return;
+    autoLoadStarted.current = true;
+    loadIdentifiers({ pfx: prefix, set: setSpec, fromDate: from, untilDate: until, token: "", history: [] });
+  }, [loaded, loading, loadError, initNoRecordsMatch, loadIdentifiers, prefix, setSpec, from, until]);
 
   const handleJumpToRecord = () => {
     const id = idQuery.trim();
