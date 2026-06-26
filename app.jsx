@@ -1,7 +1,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.1.0";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -605,6 +605,14 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "2.1.0",
+      date: "2026-06-26",
+      changes: [
+        "Added server-side paging for very large ListIdentifiers responses so repositories like arXiv cannot overload the browser.",
+        "Kept remote resumptionToken pagination intact after cached page slices are exhausted.",
+      ],
+    },
     {
       version: "2.0.1",
       date: "2026-06-26",

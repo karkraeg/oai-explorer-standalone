@@ -508,6 +508,69 @@ function parse_local_token(string $token): ?array
     return ['scope_id' => (int)$data['scope_id'], 'offset' => max(0, (int)($data['offset'] ?? 0))];
 }
 
+function identifier_page_token(string $cache_key, int $offset): string
+{
+    return 'page:' . base64_encode(json_encode(['cache_key' => $cache_key, 'offset' => $offset], JSON_UNESCAPED_SLASHES));
+}
+
+function parse_identifier_page_token(string $token): ?array
+{
+    if (!str_starts_with($token, 'page:')) return null;
+    $json = base64_decode(substr($token, 5), true);
+    if ($json === false) return null;
+    $data = json_decode($json, true);
+    if (!is_array($data) || empty($data['cache_key'])) return null;
+    return ['cache_key' => (string)$data['cache_key'], 'offset' => max(0, (int)($data['offset'] ?? 0))];
+}
+
+function identifier_page_cache_key(string $key): string
+{
+    return 'identifier-page:' . $key;
+}
+
+function cache_and_slice_identifier_page(PDO $db, string $cache_key, array $data): array
+{
+    $identifiers = $data['identifiers'] ?? [];
+    if (!is_array($identifiers) || count($identifiers) <= HARVEST_PAGE_SIZE) {
+        return $data;
+    }
+
+    $payload = [
+        'identifiers' => $identifiers,
+        'total' => $data['total'] ?? null,
+        'remoteToken' => $data['resumptionToken'] ?? null,
+    ];
+    store_cache($db, identifier_page_cache_key($cache_key), json_encode($payload, JSON_UNESCAPED_SLASHES));
+    return slice_cached_identifier_page($payload, $cache_key, 0);
+}
+
+function cached_identifier_page(PDO $db, string $cache_key, int $offset): ?array
+{
+    $json = get_cached($db, identifier_page_cache_key($cache_key));
+    if ($json === null) return null;
+    $payload = json_decode($json, true);
+    if (!is_array($payload)) return null;
+    return slice_cached_identifier_page($payload, $cache_key, $offset);
+}
+
+function slice_cached_identifier_page(array $payload, string $cache_key, int $offset): array
+{
+    $identifiers = is_array($payload['identifiers'] ?? null) ? $payload['identifiers'] : [];
+    $limit = HARVEST_PAGE_SIZE;
+    $slice = array_slice($identifiers, $offset, $limit);
+    $next_offset = $offset + $limit;
+    $next = ($next_offset < count($identifiers))
+        ? identifier_page_token($cache_key, $next_offset)
+        : ($payload['remoteToken'] ?? null);
+
+    return [
+        'identifiers' => $slice,
+        'total' => $payload['total'] ?? null,
+        'resumptionToken' => $next,
+        'cacheMode' => 'page-cache',
+    ];
+}
+
 function local_identifier_page(PDO $db, int $scope_id, int $offset = 0): ?array
 {
     $scope = get_scope($db, $scope_id);

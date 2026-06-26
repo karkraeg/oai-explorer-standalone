@@ -61,6 +61,17 @@ if ($action === 'refreshSummary') {
 }
 
 if ($action === 'listIdentifiers' && $db !== null) {
+    $page_token = parse_identifier_page_token((string)($_GET['resumptionToken'] ?? ''));
+    if ($page_token) {
+        $page = cached_identifier_page($db, $page_token['cache_key'], $page_token['offset']);
+        if ($page !== null) {
+            echo json_encode(['ok' => true, 'data' => $page]);
+            exit;
+        }
+        echo json_encode(['ok' => false, 'error' => 'badResumptionToken: Cached result page expired', 'oai_error' => 'badResumptionToken']);
+        exit;
+    }
+
     $local_token = parse_local_token((string)($_GET['resumptionToken'] ?? ''));
     if ($local_token) {
         $page = local_identifier_page($db, $local_token['scope_id'], $local_token['offset']);
@@ -129,6 +140,12 @@ if (!$parsed['ok']) {
 if ($action === 'listIdentifiers' && $db !== null && empty($_GET['resumptionToken'])) {
     try {
         $parsed['data']['cacheMode'] = 'live';
+    } catch (Throwable $e) {}
+}
+
+if ($action === 'listIdentifiers' && $db !== null && !$nocache) {
+    try {
+        $parsed['data'] = cache_and_slice_identifier_page($db, $cache_key, $parsed['data'] ?? []);
     } catch (Throwable $e) {}
 }
 
