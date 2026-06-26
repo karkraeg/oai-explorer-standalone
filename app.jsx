@@ -146,12 +146,16 @@ function App() {
     setActiveRecord(null);
     setLoadingStep(0);
 
-    const hasFilters = !!(filters.metadataPrefix || filters.set || filters.from || filters.until);
-    if (!hasFilters && !NOCACHE) {
+    const hasRestrictedFilters = !!(filters.set || filters.from || filters.until);
+    if (!hasRestrictedFilters && !NOCACHE) {
       try {
         const boot = await fetchApi("bootstrap", baseUrl);
         if (boot.ok) {
           const repo = repoDataFromSummary(boot.data);
+          if (filters.metadataPrefix && filters.metadataPrefix !== repo.initPrefix) {
+            repo.initPrefix = filters.metadataPrefix;
+            repo.initTotal = null;
+          }
           setRepoData(repo);
           saveRecentEndpoint(baseUrl);
           setScreen("explore");
@@ -217,7 +221,7 @@ function App() {
       const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: initParams.prefix, set: initParams.set, from: initParams.from, until: initParams.until });
       history.replaceState({}, "", exploreUrl);
       setLastExploreUrl(exploreUrl);
-      if (!hasFilters) refreshEndpointSummary(baseUrl);
+      if (!hasRestrictedFilters) refreshEndpointSummary(baseUrl);
     } catch (e) {
       setError({ kind: "unreachable", url: baseUrl });
       setScreen("error");
