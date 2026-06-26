@@ -37,7 +37,7 @@ if ($action === 'bootstrap') {
         exit;
     }
     try {
-        $summary = get_endpoint_summary($db, $base_url);
+        $summary = get_endpoint_summary($db, $base_url, !empty($_GET['slim']));
         if ($summary !== null) {
             echo json_encode(['ok' => true, 'data' => $summary]);
             exit;
@@ -214,6 +214,7 @@ function build_endpoint_summary(string $base_url): array
         'identify' => $identify['data'],
         'formats' => $formats,
         'sets' => $sets_data['sets'] ?? [],
+        'setsCount' => count($sets_data['sets'] ?? []),
         'setsTruncated' => !empty($sets_data['truncated']),
         'initPrefix' => $init_prefix,
         'initRecords' => [],

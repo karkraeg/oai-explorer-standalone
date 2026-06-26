@@ -226,7 +226,7 @@ function store_cache(PDO $db, string $key, string $data): void
     $stmt->execute([$key, $data, time()]);
 }
 
-function get_endpoint_summary(PDO $db, string $base_url): ?array
+function get_endpoint_summary(PDO $db, string $base_url, bool $slim = false): ?array
 {
     $stmt = $db->prepare('SELECT summary_json, refreshed_at FROM endpoint_summaries WHERE base_url = ?');
     $stmt->execute([$base_url]);
@@ -239,12 +239,23 @@ function get_endpoint_summary(PDO $db, string $base_url): ?array
     $refreshed_at = (int)$row['refreshed_at'];
     $summary['refreshedAt'] = $refreshed_at;
     $summary['stale'] = (time() - $refreshed_at) >= CACHE_TTL;
+    if (!isset($summary['setsCount']) && is_array($summary['sets'] ?? null)) {
+        $summary['setsCount'] = count($summary['sets']);
+    }
+    if ($slim && is_array($summary['sets'] ?? null) && count($summary['sets']) > 200) {
+        $summary['sets'] = [];
+        $summary['setsHydrated'] = false;
+    }
     return $summary;
 }
 
 function store_endpoint_summary(PDO $db, string $base_url, array $summary): void
 {
     $now = time();
+    if (!isset($summary['setsCount']) && is_array($summary['sets'] ?? null)) {
+        $summary['setsCount'] = count($summary['sets']);
+    }
+    $summary['setsHydrated'] = true;
     $summary['refreshedAt'] = $now;
     $summary['stale'] = false;
     $stmt = $db->prepare('INSERT INTO endpoint_summaries (base_url, summary_json, refreshed_at) VALUES (?, ?, ?)

@@ -50,7 +50,9 @@ function repoDataFromSummary(data) {
     identify: data.identify || {},
     formats: data.formats || [],
     sets: data.sets || [],
+    setsCount: data.setsCount ?? (data.sets || []).length,
     setsTruncated: !!data.setsTruncated,
+    setsHydrated: data.setsHydrated !== false,
     initPrefix: data.initPrefix || "oai_dc",
     initRecords: data.initRecords || [],
     initTotal: data.initTotal ?? null,
@@ -149,7 +151,7 @@ function App() {
     const hasRestrictedFilters = !!(filters.set || filters.from || filters.until);
     if (!hasRestrictedFilters && !NOCACHE) {
       try {
-        const boot = await fetchApi("bootstrap", baseUrl);
+        const boot = await fetchApi("bootstrap", baseUrl, { slim: "1" });
         if (boot.ok) {
           const repo = repoDataFromSummary(boot.data);
           if (filters.metadataPrefix && filters.metadataPrefix !== repo.initPrefix) {
@@ -162,7 +164,7 @@ function App() {
           const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: repo.initPrefix });
           history.replaceState({}, "", exploreUrl);
           setLastExploreUrl(exploreUrl);
-          if (boot.data.stale) refreshEndpointSummary(baseUrl);
+          if (boot.data.stale || boot.data.setsHydrated === false) refreshEndpointSummary(baseUrl);
           return;
         }
       } catch (_) {}
@@ -858,7 +860,7 @@ function StartScreen({ onSubmit }) {
 
 // ── Screen 2 — Explore ────────────────────────────────────────────────────────
 function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlChange }) {
-  const { identify, formats, sets, setsTruncated,
+  const { identify, formats, sets, setsCount, setsTruncated,
           initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch } = repoData;
 
   const defaultPrefix = prefilledFilters.metadataPrefix || initPrefix || "oai_dc";
@@ -1044,7 +1046,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
             </div>
             <div className="count">
               <div className="count-num">
-                {sets.length > 0 ? (setsTruncated ? `${sets.length}+` : sets.length) : "—"}
+                {setsCount > 0 ? (setsTruncated ? `${setsCount}+` : setsCount) : "—"}
               </div>
               <div className="count-lbl">Sets</div>
             </div>
