@@ -8,7 +8,7 @@ Dieses Repository enthaelt eine kleine Web-App mit:
 
 - Frontend in `index.html`, `app.jsx`, `styles.css`
 - PHP-Backend in `api.php` als Proxy/Parser für OAI-PMH
-- Kurzzeit-Response-Cache und Background-Identifier-Harvest in SQLite oder Postgres
+- Permanenter Repository-Summary-Cache, Kurzzeit-Response-Cache und optionaler Background-Identifier-Harvest in SQLite oder Postgres
 - Docker-Compose-Stack mit Nginx, PHP-FPM, Worker und Postgres
 
 Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webpack).
@@ -19,9 +19,9 @@ Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webp
 2. Frontend ruft `api.php` mit `action`-Parametern auf.
 3. `api.php` spricht den entfernten OAI-PMH-Endpoint an (`Identify`, `ListMetadataFormats`, `ListSets`, `ListIdentifiers`, `GetRecord`).
 4. XML wird serverseitig geparst und als JSON an das Frontend geliefert.
-5. Kleine Antworten werden per URL-Hash zwischengespeichert.
-6. `ListIdentifiers` startet im Hintergrund einen langsamen Full Harvest fuer Identifier/Header-Daten.
-7. Nach fertigem Full Harvest kann die App lokal ueber Identifier paginieren; spaetere Updates laufen als Delta-Harvest ab `last_datestamp`.
+5. Repository-Summaries werden dauerhaft gespeichert, damit bekannte Endpoints sofort ohne Connecting-Screen oeffnen.
+6. Kleine OAI-Antworten werden zusaetzlich kurzzeitig per URL-Hash zwischengespeichert.
+7. `ListIdentifiers` paginiert on demand ueber den vom Repository gelieferten `resumptionToken`.
 
 Wichtig: Ganze Records und XML-Payloads werden nicht im Harvest-Cache gespeichert.
 
@@ -63,7 +63,7 @@ Der Stack startet:
 
 - `nginx`: HTTP-Einstieg
 - `php`: PHP-FPM fuer `api.php`
-- `worker`: Background-Harvest fuer Identifier
+- `worker`: optionaler Background-Harvest fuer Identifier
 - `postgres`: Harvest- und Cache-Datenbank
 
 ## .env Konfiguration (Timeouts etc.)
@@ -85,7 +85,7 @@ Bedeutung:
 
 - `APP_ENV`: `development` oder `production`
 - `FETCH_TIMEOUT`: Timeout fuer OAI-HTTP-Requests in Sekunden
-- `CACHE_TTL`: Cache-Lebensdauer in Sekunden
+- `CACHE_TTL`: Lebensdauer fuer Kurzzeit-Response-Cache und Schwelle fuer Summary-Refresh
 - `OAI_USER_AGENT`: User-Agent fuer OAI-Requests
 - `DATABASE_URL`: optionaler PDO-DSN; leer nutzt SQLite in `cache.sqlite`
 - `HARVEST_DELAY_MS`: Pause zwischen Harvest-Seiten
@@ -145,7 +145,8 @@ Wichtig: Der `nocache`-Parameter ist nur aktiv, wenn `APP_ENV != production`.
 - Bei nicht erreichbaren Hosts liefert die API `kind: "unreachable"`.
 - Bei nicht-OAI/XML-Antworten liefert die API `kind: "not-oai"`.
 - `ListSets` kann serverseitig abgeschnitten sein; das wird als `truncated` zurueckgegeben.
-- Full Harvest speichert nur Identifier, Datestamp, Deleted-Status und SetSpecs.
+- Repository-Summaries bleiben dauerhaft gespeichert; nach `CACHE_TTL` werden sie beim Wiederbesuch im Hintergrund aktualisiert.
+- `resumptionToken`-Werte koennen serverseitig ablaufen; dann muss die Identifier-Liste ab Seite 1 neu geladen werden.
 - `GetRecord`-XML wird nicht langfristig gecacht.
 
 ## Deployment (einfach)

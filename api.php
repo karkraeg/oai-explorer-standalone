@@ -11,7 +11,7 @@ app_bootstrap();
 set_time_limit(FETCH_TIMEOUT + 10);
 
 $action = trim($_GET['action'] ?? '');
-$allowed = ['identify', 'listMetadataFormats', 'listSets', 'listIdentifiers', 'getRecord'];
+$allowed = ['bootstrap', 'refreshSummary', 'identify', 'listMetadataFormats', 'listSets', 'listIdentifiers', 'getRecord'];
 if (!in_array($action, $allowed, true)) {
     die(json_encode(['ok' => false, 'error' => 'Invalid action']));
 }
@@ -31,6 +31,35 @@ try {
     $db = null;
 }
 
+if ($action === 'bootstrap') {
+    if ($db === null || $nocache) {
+        echo json_encode(['ok' => false, 'error' => 'No cached summary']);
+        exit;
+    }
+    try {
+        $summary = get_endpoint_summary($db, $base_url);
+        if ($summary !== null) {
+            echo json_encode(['ok' => true, 'data' => $summary]);
+            exit;
+        }
+    } catch (Throwable $e) {}
+    echo json_encode(['ok' => false, 'error' => 'No cached summary']);
+    exit;
+}
+
+if ($action === 'refreshSummary') {
+    try {
+        $summary = build_endpoint_summary($base_url);
+        if ($db !== null && !$nocache) {
+            store_endpoint_summary($db, $base_url, $summary);
+        }
+        echo json_encode(['ok' => true, 'data' => $summary]);
+    } catch (Throwable $e) {
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 if ($action === 'listIdentifiers' && $db !== null) {
     $local_token = parse_local_token((string)($_GET['resumptionToken'] ?? ''));
     if ($local_token) {
@@ -48,7 +77,6 @@ if ($action === 'listIdentifiers' && $db !== null) {
         $until = (string)($_GET['until'] ?? '');
         $page = try_local_list_identifiers($db, $base_url, $prefix, $set_spec, $from, $until);
         if ($page !== null) {
-            enqueue_after_list_identifiers($db, $base_url, $prefix, $set_spec, $page['total'] ?? null);
             echo json_encode(['ok' => true, 'data' => $page]);
             exit;
         }
@@ -100,9 +128,6 @@ if (!$parsed['ok']) {
 
 if ($action === 'listIdentifiers' && $db !== null && empty($_GET['resumptionToken'])) {
     try {
-        $prefix = (string)($params['metadataPrefix'] ?? 'oai_dc');
-        $set_spec = (string)($params['set'] ?? '');
-        enqueue_after_list_identifiers($db, $base_url, $prefix, $set_spec, $parsed['data']['total'] ?? null);
         $parsed['data']['cacheMode'] = 'live';
     } catch (Throwable $e) {}
 }
@@ -127,4 +152,57 @@ function build_list_identifier_params(): array
     if (!empty($_GET['from'])) $params['from'] = (string)$_GET['from'];
     if (!empty($_GET['until'])) $params['until'] = (string)$_GET['until'];
     return $params;
+}
+
+function fetch_oai_action(string $base_url, string $action, array $params): array
+{
+    $raw = fetch_url(build_oai_url($base_url, $params));
+    if ($raw === null) {
+        return ['ok' => false, 'error' => 'Connection failed — host unreachable or timed out', 'kind' => 'unreachable'];
+    }
+    return parse_oai_xml($raw, $action);
+}
+
+function build_endpoint_summary(string $base_url): array
+{
+    $identify = fetch_oai_action($base_url, 'identify', ['verb' => 'Identify']);
+    if (!$identify['ok']) {
+        throw new RuntimeException((string)($identify['error'] ?? 'Identify failed'));
+    }
+
+    $formats_res = fetch_oai_action($base_url, 'listMetadataFormats', ['verb' => 'ListMetadataFormats']);
+    $formats = $formats_res['ok'] ? ($formats_res['data'] ?? []) : [];
+    $init_prefix = 'oai_dc';
+    foreach ($formats as $format) {
+        if (($format['value'] ?? '') === 'oai_dc') {
+            $init_prefix = 'oai_dc';
+            break;
+        }
+        if ($init_prefix === 'oai_dc' && !empty($format['value'])) {
+            $init_prefix = (string)$format['value'];
+        }
+    }
+
+    $sets_res = fetch_oai_action($base_url, 'listSets', ['verb' => 'ListSets']);
+    $sets_data = $sets_res['ok'] ? ($sets_res['data'] ?? []) : [];
+
+    $ids_res = fetch_oai_action($base_url, 'listIdentifiers', [
+        'verb' => 'ListIdentifiers',
+        'metadataPrefix' => $init_prefix,
+    ]);
+    $ids_data = $ids_res['ok'] ? ($ids_res['data'] ?? []) : [];
+    $no_records_match = !$ids_res['ok'] && (($ids_res['oai_error'] ?? '') === 'noRecordsMatch');
+
+    return [
+        'identify' => $identify['data'],
+        'formats' => $formats,
+        'sets' => $sets_data['sets'] ?? [],
+        'setsTruncated' => !empty($sets_data['truncated']),
+        'initPrefix' => $init_prefix,
+        'initRecords' => [],
+        'initTotal' => $ids_data['total'] ?? null,
+        'initToken' => null,
+        'initLoaded' => false,
+        'initNoRecordsMatch' => $no_records_match,
+    ];
 }

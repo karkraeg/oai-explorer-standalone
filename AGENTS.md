@@ -10,15 +10,17 @@ OAI-PMH-Endpoints interaktiv untersuchen: Repository-Infos lesen, Identifier fil
 
 - Frontend: React UMD + Babel Standalone (ohne Build-Pipeline)
 - Backend: `api.php` (OAI-PMH Fetch + XML Parsing + JSON Output)
-- Cache: SQLite (`cache.sqlite`)
+- Cache: Postgres im Docker-Stack; SQLite (`cache.sqlite`) nur Fallback ohne `DATABASE_URL`
+- Background: `worker.php` fuer optionale Identifier-Harvest-Jobs
 
 ## Wichtigste Dateien
 
 - `index.html`: Laden von React/ReactDOM/Babel und App-Skripten
 - `app.jsx`: Alle Screens, State-Flow und API-Aufrufe
 - `styles.css`: komplettes Styling
-- `tweaks-panel.jsx`: Dev-Tweaks-UI
-- `api.php`: Validierung, OAI-Requests, XML-Parsing, Cache
+- `api.php`: Validierung, OAI-Requests, XML-Parsing, Summary-/Response-Cache
+- `lib.php`: DB-Migrationen, OAI-Parsing, Cache- und Harvest-Helfer
+- `worker.php`: optionaler Background-Harvest fuer Identifier
 
 ## Lokales Starten
 
@@ -28,6 +30,21 @@ php -S 127.0.0.1:8000
 
 Danach im Browser: `http://127.0.0.1:8000`
 
+Docker/Postgres-Stack:
+
+```bash
+docker compose up --build
+```
+
+Danach im Browser: `http://127.0.0.1:8080`
+
+## Cache-Modell
+
+- `endpoint_summaries`: dauerhafte Kennzahlen/Bootstrap-Daten pro Endpoint.
+- `response_cache`: kurzlebiger Cache fuer kleine OAI-Responses; `CACHE_TTL` steuert Frische.
+- `harvest_*`: optionale Identifier-Harvest-Daten; nicht fuer initiales Oeffnen bekannter Endpoints voraussetzen.
+- `resumptionToken` nie als dauerhaft gueltig behandeln; Tokens koennen serverseitig schnell ablaufen.
+
 ## Arbeitsregeln fuer Agents
 
 1. Keine Build-Tooling-Migration ohne explizite Anforderung (kein Vite/Webpack/TypeScript-Migration by default).
@@ -36,6 +53,7 @@ Danach im Browser: `http://127.0.0.1:8000`
 4. API-Verhalten in `api.php` nicht stillschweigend aendern (insbesondere Fehlerformat und Response-Felder).
 5. Bei UI-Aenderungen auf Desktop und Mobile achten.
 6. Keine sensiblen Daten oder geheimen Keys in Code/Docs eintragen.
+7. Dauerhaften Summary-Cache nicht mit grossen Identifier-Seiten oder XML-Records fuellen.
 
 ## Checkliste vor Abschluss
 

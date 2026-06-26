@@ -45,6 +45,23 @@ function buildExplorerUrl({ url, metadataPrefix, set, from, until, identifier })
   return `${location.origin}${location.pathname}?${sp}`;
 }
 
+function repoDataFromSummary(data) {
+  return {
+    identify: data.identify || {},
+    formats: data.formats || [],
+    sets: data.sets || [],
+    setsTruncated: !!data.setsTruncated,
+    initPrefix: data.initPrefix || "oai_dc",
+    initRecords: data.initRecords || [],
+    initTotal: data.initTotal ?? null,
+    initToken: data.initToken ?? null,
+    initLoaded: !!data.initLoaded,
+    initNoRecordsMatch: !!data.initNoRecordsMatch,
+    stale: !!data.stale,
+    refreshedAt: data.refreshedAt ?? null,
+  };
+}
+
 function App() {
   const [screen, setScreen] = useState("start");
   const [url, setUrl] = useState("");
@@ -55,6 +72,17 @@ function App() {
   const [error, setError] = useState(null);
   const [autoOpenRecord, setAutoOpenRecord] = useState(null); // { identifier, prefix } — set by initFromUrl
   const [lastExploreUrl, setLastExploreUrl] = useState(null);
+  const currentUrlRef = useRef("");
+
+  const refreshEndpointSummary = useCallback(async (baseUrl) => {
+    try {
+      const res = await fetchApi("refreshSummary", baseUrl);
+      if (res.ok && currentUrlRef.current === baseUrl) {
+        setRepoData(repoDataFromSummary(res.data));
+        saveRecentEndpoint(baseUrl);
+      }
+    } catch (_) {}
+  }, []);
 
   // Restore state from explorer share URL on first load
   useEffect(() => {
@@ -110,12 +138,32 @@ function App() {
       if (overrideFilters.until !== undefined) filters.until = overrideFilters.until;
     }
 
+    currentUrlRef.current = baseUrl;
     setUrl(baseUrl);
     setPrefilledFilters(filters);
     setError(null);
     setRepoData(null);
     setActiveRecord(null);
     setLoadingStep(0);
+
+    const hasFilters = !!(filters.metadataPrefix || filters.set || filters.from || filters.until);
+    if (!hasFilters && !NOCACHE) {
+      try {
+        const boot = await fetchApi("bootstrap", baseUrl);
+        if (boot.ok) {
+          const repo = repoDataFromSummary(boot.data);
+          setRepoData(repo);
+          saveRecentEndpoint(baseUrl);
+          setScreen("explore");
+          const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: repo.initPrefix });
+          history.replaceState({}, "", exploreUrl);
+          setLastExploreUrl(exploreUrl);
+          if (boot.data.stale) refreshEndpointSummary(baseUrl);
+          return;
+        }
+      } catch (_) {}
+    }
+
     setScreen("loading");
 
     try {
@@ -169,11 +217,12 @@ function App() {
       const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: initParams.prefix, set: initParams.set, from: initParams.from, until: initParams.until });
       history.replaceState({}, "", exploreUrl);
       setLastExploreUrl(exploreUrl);
+      if (!hasFilters) refreshEndpointSummary(baseUrl);
     } catch (e) {
       setError({ kind: "unreachable", url: baseUrl });
       setScreen("error");
     }
-  }, []);
+  }, [refreshEndpointSummary]);
 
   return (
     <div className="app">
@@ -516,11 +565,11 @@ function FaqScreen({ onBack }) {
     { q: "Can I export the records?",
       a: "Yes — the sync command under the filters is a uvx ometha one-liner that mirrors your current prefix, set, and date range. Requires uv and ometha installed locally." },
     { q: "Why does ListRecords sometimes paginate?",
-      a: "Repositories return a resumptionToken when the result set exceeds their page limit. The harvester replays the request with that token until it comes back empty." },
+      a: "Repositories return a resumptionToken when the result set exceeds their page limit. Tokens can expire; if that happens, reload the list from page 1." },
     { q: "Is this tool affiliated with any specific repository?",
       a: "No — it's a generic OAI-PMH 2.0 client. Any compliant endpoint should work; the example chips on the start screen are popular German and international repositories." },
     { q: "Are requests cached?",
-      a: "Yes — the server caches every OAI-PMH response in a local SQLite database. The TTL is two hours." },
+      a: "Yes — repository summaries are kept permanently so known endpoints open immediately. Stale summaries are refreshed in the background." },
     { q: "Can everybody see what I explored under 'RECENTLY USED'?",
       a: "No, that's only shown to you."
     }
@@ -815,6 +864,13 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   const [idQuery,          setIdQuery]          = useState("");
   const [linkCopied,       setLinkCopied]       = useState(false);
 
+  useEffect(() => {
+    if (!loaded && !loading) {
+      setTotal(initTotal ?? null);
+      setNoRecordsMatch(initNoRecordsMatch || false);
+    }
+  }, [initTotal, initNoRecordsMatch, loaded, loading]);
+
   const filteredSets = useMemo(() => {
     const q = setQuery.toLowerCase();
     return sets.filter((s) =>
@@ -822,7 +878,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
     );
   }, [sets, setQuery]);
 
-  const loadIdentifiers = useCallback(async ({ pfx, set, fromDate, untilDate, resumptionToken: token = "", history = [] }) => {
+  const loadIdentifiers = useCallback(async ({ pfx, set, fromDate, untilDate, resumptionToken = "", token = resumptionToken, history = [] }) => {
     setLoading(true);
     setLoaded(false);
     setLoadError(null);
@@ -855,6 +911,11 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
         setPageIndex(0);
         setLoaded(true);
         setNoRecordsMatch(true);
+      } else if (res.oai_error === "badResumptionToken") {
+        setRecords([]);
+        setResumptionToken(null);
+        setLoaded(false);
+        setLoadError("This result session expired. Reload the list from page 1.");
       } else {
         setLoadError(res.error || "Failed to load identifiers");
       }

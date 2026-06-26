@@ -89,6 +89,11 @@ function migrate_db(PDO $db): void
                 response TEXT NOT NULL,
                 fetched_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS endpoint_summaries (
+                base_url TEXT PRIMARY KEY,
+                summary_json TEXT NOT NULL,
+                refreshed_at INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS harvest_scopes (
                 id BIGSERIAL PRIMARY KEY,
                 base_url TEXT NOT NULL,
@@ -141,6 +146,11 @@ function migrate_db(PDO $db): void
             cache_key TEXT PRIMARY KEY,
             response TEXT NOT NULL,
             fetched_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS endpoint_summaries (
+            base_url TEXT PRIMARY KEY,
+            summary_json TEXT NOT NULL,
+            refreshed_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS harvest_scopes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,6 +224,32 @@ function store_cache(PDO $db, string $key, string $data): void
     $stmt = $db->prepare('INSERT INTO response_cache (cache_key, response, fetched_at) VALUES (?, ?, ?)
         ON CONFLICT (cache_key) DO UPDATE SET response = excluded.response, fetched_at = excluded.fetched_at');
     $stmt->execute([$key, $data, time()]);
+}
+
+function get_endpoint_summary(PDO $db, string $base_url): ?array
+{
+    $stmt = $db->prepare('SELECT summary_json, refreshed_at FROM endpoint_summaries WHERE base_url = ?');
+    $stmt->execute([$base_url]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return null;
+
+    $summary = json_decode((string)$row['summary_json'], true);
+    if (!is_array($summary)) return null;
+
+    $refreshed_at = (int)$row['refreshed_at'];
+    $summary['refreshedAt'] = $refreshed_at;
+    $summary['stale'] = (time() - $refreshed_at) >= CACHE_TTL;
+    return $summary;
+}
+
+function store_endpoint_summary(PDO $db, string $base_url, array $summary): void
+{
+    $now = time();
+    $summary['refreshedAt'] = $now;
+    $summary['stale'] = false;
+    $stmt = $db->prepare('INSERT INTO endpoint_summaries (base_url, summary_json, refreshed_at) VALUES (?, ?, ?)
+        ON CONFLICT (base_url) DO UPDATE SET summary_json = excluded.summary_json, refreshed_at = excluded.refreshed_at');
+    $stmt->execute([$base_url, json_encode($summary, JSON_UNESCAPED_SLASHES), $now]);
 }
 
 function build_oai_url(string $base_url, array $params): string
