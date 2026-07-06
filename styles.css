@@ -1130,8 +1130,6 @@ code,
 }
 
 .select {
-  appearance: none;
-  -webkit-appearance: none;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -1139,6 +1137,10 @@ code,
   font-size: 13.5px;
   color: var(--text);
   font-family: inherit;
+}
+select.select {
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.5'/></svg>");
   background-repeat: no-repeat;
@@ -1146,8 +1148,6 @@ code,
   padding-right: 28px;
 }
 input[type="date"].select {
-  background-image: none;
-  padding-right: 12px;
   font-family: var(--font-mono);
   font-size: 13px;
 }
@@ -1913,6 +1913,9 @@ input[type="date"].select {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 800px) {
+  .screen {
+    padding: 32px 16px 64px;
+  }
   .explore-grid {
     grid-template-columns: 1fr;
   }
@@ -1922,6 +1925,21 @@ input[type="date"].select {
   .filter-row,
   .filter-row:last-child {
     grid-template-columns: 1fr;
+  }
+  .filter-action .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .results-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .table-wrap {
+    overflow-x: auto;
+  }
+  .table {
+    min-width: 560px;
   }
   .hero-feat {
     grid-template-columns: 1fr;

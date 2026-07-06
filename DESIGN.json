@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-06T00:00:00+02:00",
+  "title": "Design System: OAI-PMH Explorer",
+  "extensions": {
+    "colorMeta": {
+      "cool-paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "oklch(0.985 0.003 240)",
+        "tonalRamp": ["oklch(0.15 0.003 240)", "oklch(0.27 0.003 240)", "oklch(0.39 0.003 240)", "oklch(0.51 0.003 240)", "oklch(0.63 0.003 240)", "oklch(0.75 0.003 240)", "oklch(0.87 0.003 240)", "oklch(0.95 0.003 240)"]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "oklch(0.2 0.012 240)",
+        "tonalRamp": ["oklch(0.15 0.012 240)", "oklch(0.27 0.012 240)", "oklch(0.39 0.012 240)", "oklch(0.51 0.012 240)", "oklch(0.63 0.012 240)", "oklch(0.75 0.012 240)", "oklch(0.87 0.012 240)", "oklch(0.95 0.012 240)"]
+      },
+      "teal": {
+        "role": "primary",
+        "displayName": "Workbench Teal",
+        "canonical": "oklch(0.55 0.13 195)",
+        "tonalRamp": ["oklch(0.15 0.04 195)", "oklch(0.27 0.07 195)", "oklch(0.39 0.1 195)", "oklch(0.51 0.13 195)", "oklch(0.63 0.11 195)", "oklch(0.75 0.08 195)", "oklch(0.87 0.05 195)", "oklch(0.95 0.025 195)"]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Documentation and major screen titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Interface copy and explanations."
+      },
+      "mono": {
+        "displayName": "Protocol Mono",
+        "purpose": "Identifiers, XML, URLs, commands, and protocol values."
+      }
+    },
+    "shadows": [
+      {
+        "name": "surface-hairline",
+        "value": "0 1px 0 rgba(15, 23, 42, 0.04)",
+        "purpose": "Minimal surface separation."
+      },
+      {
+        "name": "overlay",
+        "value": "0 10px 28px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.04)",
+        "purpose": "Floating combobox and menu layers."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "120ms ease",
+        "purpose": "Hover and focus state transitions."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "800px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary task action.",
+      "html": "<button class=\"ds-btn-primary\">Load identifiers</button>",
+      "css": ".ds-btn-primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: var(--radius); padding: 9px 16px; font: 500 13.5px var(--font-sans); cursor: pointer; } .ds-btn-primary:hover { background: var(--accent-hover); } .ds-btn-primary:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "description": "Secondary or local action.",
+      "html": "<button class=\"ds-btn-secondary\">Go to record →</button>",
+      "css": ".ds-btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 9px 16px; font: 500 13.5px var(--font-sans); cursor: pointer; } .ds-btn-secondary:hover { background: var(--bg-soft); } .ds-btn-secondary:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Free text, URLs, and pasted identifiers.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"oai:example.org:1234\">",
+      "css": ".ds-input { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 9px 12px; font: 13.5px var(--font-sans); } .ds-input:hover { border-color: var(--text-dim); } .ds-input:focus-visible { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "description": "Compact example or filter action.",
+      "html": "<button class=\"ds-chip\">Example endpoint</button>",
+      "css": ".ds-chip { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; padding: 7px 12px; font: 13px var(--font-sans); cursor: pointer; } .ds-chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--bg-soft); } .ds-chip:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }"
+    },
+    {
+      "name": "Information Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Repository identity and summary metadata.",
+      "html": "<section class=\"ds-card\"><strong>Repository</strong><p>OAI-PMH endpoint metadata</p></section>",
+      "css": ".ds-card { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; font: 14px/1.5 var(--font-sans); } .ds-card p { color: var(--text-muted); margin: 6px 0 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Metadata Workbench",
+    "overview": "A precise, quiet specialist tool. Familiar controls and restrained color keep attention on metadata and protocol behavior.",
+    "keyCharacteristics": ["Cool paper-like surfaces", "Graphite text", "Restrained teal state color", "Dense readable metadata", "Responsive task order"],
+    "rules": [
+      {
+        "name": "The One Signal Rule",
+        "body": "Teal communicates action or state; it is not decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "Add shadow only when an element occupies a higher interaction layer.",
+        "section": "elevation"
+      }
+    ],
+    "dos": ["Preserve familiar control behavior.", "Use monospace for exact protocol values.", "Maintain visible keyboard focus."],
+    "donts": ["Do not use playful SaaS styling.", "Do not invent controls or add misleading affordances.", "Do not hide essential metadata on mobile."]
+  }
+}
