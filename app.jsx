@@ -173,7 +173,30 @@ function App() {
     setScreen("loading");
 
     try {
-      const identifyRes = await fetchApi("identify", baseUrl);
+      let identifyRes;
+      if (!/^https?:\/\//i.test(baseUrl)) {
+        // No scheme given — try https first, then fall back to http
+        try {
+          identifyRes = await fetchApi("identify", "https://" + baseUrl);
+        } catch (_) { identifyRes = { ok: false }; }
+        if (identifyRes.ok) {
+          baseUrl = "https://" + baseUrl;
+        } else {
+          let httpRes;
+          try {
+            httpRes = await fetchApi("identify", "http://" + baseUrl);
+          } catch (_) { httpRes = { ok: false }; }
+          if (httpRes.ok) {
+            baseUrl = "http://" + baseUrl;
+            identifyRes = httpRes;
+          } else {
+            baseUrl = "https://" + baseUrl;
+          }
+        }
+        setUrl(baseUrl);
+      } else {
+        identifyRes = await fetchApi("identify", baseUrl);
+      }
       setLoadingStep(1);
       const formatsRes  = await fetchApi("listMetadataFormats", baseUrl);
       setLoadingStep(2);
