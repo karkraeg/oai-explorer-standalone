@@ -7,13 +7,14 @@
   --border-strong: oklch(0.82 0.008 240);
   --text: oklch(0.2 0.012 240);
   --text-muted: oklch(0.45 0.012 240);
-  --text-dim: oklch(0.6 0.01 240);
+  --text-dim: oklch(0.54 0.01 240);
 
   --accent: oklch(0.55 0.13 195);
   --accent-hover: oklch(0.48 0.14 195);
   --accent-soft: oklch(0.96 0.03 195);
   --accent-border: oklch(0.85 0.06 195);
   --accent-text: oklch(0.4 0.13 195);
+  --error-text: oklch(0.55 0.2 25);
 
   --row-pad: 12px;
 
@@ -51,6 +52,11 @@ body {
 
 button {
   font-family: inherit;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 a {
   color: var(--accent-text);
@@ -710,6 +716,10 @@ code,
 .btn:hover {
   background: var(--bg-soft);
 }
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .btn:active {
   transform: translateY(1px);
 }
@@ -1101,8 +1111,12 @@ code,
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-.filter-row:last-child {
+.filter-row--dates {
   grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+}
+.filter-row--jump {
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
 }
 .filter {
@@ -1342,15 +1356,26 @@ input[type="date"].select {
 .table tbody tr:last-child td {
   border-bottom: 0;
 }
-.table tbody tr {
-  cursor: pointer;
-  transition: background 0.08s ease;
+.cell-id-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.table tbody tr.row-hover {
-  background: var(--accent-soft);
-}
-.cell-id-text {
+.record-link {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text);
+  font-size: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.record-link:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .cell-date {
   color: var(--text-muted);
@@ -1372,11 +1397,6 @@ input[type="date"].select {
   border-color: oklch(0.85 0.06 25);
   background: oklch(0.97 0.02 25);
 }
-.badge-empty {
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-}
-
 .skeleton {
   display: inline-block;
   height: 10px;
@@ -1682,42 +1702,23 @@ input[type="date"].select {
 }
 
 .cmd-block {
-  margin-bottom: 8px;
+  margin: 0 0 24px;
+  border-bottom: 1px solid var(--border);
 }
-.cmd-block--sidebar {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-.cmd-block--sidebar .cmd-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.cmd-summary {
+  padding: 0 0 12px;
+  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-dim);
-  margin-bottom: 8px;
-  font-weight: 400;
+  cursor: pointer;
 }
-.cmd-block--sidebar .cmd-row {
-  border-radius: var(--radius-sm);
+.cmd-summary:hover {
+  color: var(--text);
 }
-.cmd-block--sidebar .cmd-line {
-  padding: 10px 12px;
-  font-size: 11.5px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.cmd-block--sidebar .cmd-line .cmd-text {
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.cmd-block--sidebar .cmd-hint {
-  font-size: 10.5px;
-  margin-top: 6px;
-  padding: 0;
+.cmd-content {
+  padding-bottom: 24px;
 }
 .cmd-copy-mini {
   background: none;
@@ -1737,11 +1738,7 @@ input[type="date"].select {
   background: var(--bg-soft);
 }
 
-/* explore variant — sits between filters and results, full-width */
-.cmd-block--explore {
-  margin: 0 0 24px;
-}
-.cmd-block--explore .cmd-label {
+.cmd-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1752,72 +1749,6 @@ input[type="date"].select {
   color: var(--text-dim);
   margin-bottom: 8px;
   font-weight: 400;
-}
-.cmd-block--explore .cmd-row {
-  border-radius: var(--radius);
-}
-.cmd-block--explore .cmd-line {
-  padding: 12px 14px;
-  font-size: 12.5px;
-  white-space: nowrap;
-  overflow-x: auto;
-}
-.cmd-block--explore .cmd-hint {
-  font-size: 11px;
-  margin-top: 6px;
-  padding: 0 4px;
-}
-
-/* record variant — full-width, larger */
-.record-cli {
-  margin-bottom: 8px;
-}
-.record-cli > .cmd-label {
-  font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: none;
-  letter-spacing: 0;
-  margin-bottom: 8px;
-}
-.cmd-block--record {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.cmd-block--record .cmd-label {
-  display: none;
-}
-.cmd-block--record .cmd-line {
-  padding: 14px 16px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.cmd-block--record .cmd-row {
-  border-radius: var(--radius);
-}
-.cmd-block--record .cmd-hint {
-  font-size: 11.5px;
-  margin-top: 8px;
-  padding: 0 4px;
-}
-.record-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  color: #d8dee9;
-  text-decoration: none;
-}
-.record-link:hover {
-  text-decoration: underline;
-}
-.cmd-label {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-  font-weight: 500;
 }
 .cmd-row {
   display: flex;
@@ -1845,20 +1776,6 @@ input[type="date"].select {
 }
 .cmd-text {
   color: #d8dee9;
-}
-.btn-copy {
-  background: #161e2a;
-  border: 0;
-  border-left: 1px solid #2a3340;
-  color: #d8dee9;
-  font-size: 12.5px;
-  padding: 0 18px;
-  cursor: pointer;
-  font-family: inherit;
-  white-space: nowrap;
-}
-.btn-copy:hover {
-  background: #1d2735;
 }
 .cmd-hint {
   font-size: 11.5px;
@@ -1911,6 +1828,15 @@ input[type="date"].select {
   display: block;
 }
 
+.text-error,
+.record-error {
+  color: var(--error-text);
+}
+.record-error {
+  padding: 24px 0;
+  font-size: 13px;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 800px) {
   .screen {
@@ -1922,8 +1848,7 @@ input[type="date"].select {
   .info-card {
     position: static;
   }
-  .filter-row,
-  .filter-row:last-child {
+  .filter-row {
     grid-template-columns: 1fr;
   }
   .filter-action .btn {
@@ -1935,11 +1860,13 @@ input[type="date"].select {
     flex-direction: column;
     gap: 8px;
   }
-  .table-wrap {
-    overflow-x: auto;
-  }
-  .table {
-    min-width: 560px;
+  .btn,
+  .btn-ghost,
+  .cmd-copy-mini,
+  .topbar-meta button,
+  .footer-links button,
+  .footer-links a {
+    min-height: 44px;
   }
   .hero-feat {
     grid-template-columns: 1fr;
@@ -1960,6 +1887,17 @@ input[type="date"].select {
   }
   .topbar-meta .topbar-link {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

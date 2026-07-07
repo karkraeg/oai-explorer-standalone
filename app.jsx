@@ -1,7 +1,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.2.0";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -338,7 +338,7 @@ function ScrollToTopButton() {
 function LoadingScreen({ url, step }) {
   const verbs = ["Identify", "ListMetadataFormats", "ListSets", "ListIdentifiers"];
   return (
-    <main className="screen screen-start" style={{ paddingTop: 120 }}>
+    <main className="screen screen-start" style={{ paddingTop: 120 }} aria-live="polite">
       <div style={{ textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
         <div className="loading-hero" style={{ marginBottom: 16 }}>
           <span className="loading-spinner" aria-hidden="true" />
@@ -376,7 +376,7 @@ function LoadingScreen({ url, step }) {
 }
 
 // ── Sync command ──────────────────────────────────────────────────────────────
-function SyncCommand({ baseURL, prefix, setSpec, from, until, variant = "sidebar" }) {
+function SyncCommand({ baseURL, prefix, setSpec, from, until }) {
   const cmd = useMemo(() => {
     const parts = ["uvx", "ometha", "default", "-p 1"];
     parts.push(`--baseurl ${baseURL}`);
@@ -404,35 +404,38 @@ function SyncCommand({ baseURL, prefix, setSpec, from, until, variant = "sidebar
   };
 
   return (
-    <section className={`cmd-block cmd-block--${variant}`}>
-      <div className="cmd-label">
-        <span>Sync from CLI</span>
-        <button className="cmd-copy-mini" onClick={copy}>
-          {copied ? "✓ Copied" : "Copy"}
-        </button>
-      </div>
-      <div className="cmd-row">
-        <div className="cmd-line">
-          <span className="cmd-prompt">$</span>
-          <code className="cmd-text">{cmd}</code>
+    <details className="cmd-block">
+      <summary className="cmd-summary">Sync from CLI</summary>
+      <div className="cmd-content">
+        <div className="cmd-label">
+          <span>Current filters</span>
+          <button className="cmd-copy-mini" onClick={copy} aria-live="polite">
+            {copied ? "✓ Copied" : "Copy"}
+          </button>
+        </div>
+        <div className="cmd-row">
+          <div className="cmd-line">
+            <span className="cmd-prompt">$</span>
+            <code className="cmd-text">{cmd}</code>
+          </div>
+        </div>
+        <div className="cmd-hint mono">
+          (requires{" "}
+          <span className="cmd-hint-tooltip">
+            <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a>
+            <span className="tooltip-text">Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh</span>
+          </span>
+          {" "}+{" "}
+          <a href="https://pypi.org/project/ometha/" target="_blank" rel="noopener noreferrer">ometha</a>)
+        </div>
+        <div className="cmd-hint mono cmd-hint--link">
+          Current request URL:{" "}
+          <a href={currentRequestUrl} target="_blank" rel="noopener noreferrer">
+            {currentRequestUrl}
+          </a>
         </div>
       </div>
-      <div className="cmd-hint mono">
-        (requires{" "}
-        <span className="cmd-hint-tooltip">
-          <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a>
-          <span className="tooltip-text">Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh</span>
-        </span>
-        {" "}+{" "}
-        <a href="https://pypi.org/project/ometha/" target="_blank" rel="noopener noreferrer">ometha</a>)
-      </div>
-      <div className="cmd-hint mono cmd-hint--link">
-        Current request URL: {" "}
-        <a href={currentRequestUrl} target="_blank" rel="noopener noreferrer">
-          {currentRequestUrl}
-        </a>
-      </div>
-    </section>
+    </details>
   );
 }
 
@@ -631,6 +634,24 @@ function FaqScreen({ onBack }) {
 function ChangelogScreen({ onBack }) {
   const entries = [
     {
+      version: "2.2.0",
+      date: "2026-07-07",
+      changes: [
+        "Refined the Explore controls with a clearer date/action row and wider jump-to-record field.",
+        "Collapsed the CLI sync command behind an on-demand disclosure.",
+        "Moved deleted record state into a compact pill next to the identifier instead of a separate table column.",
+        "Improved keyboard and screen-reader behavior for filters, set selection, status updates, errors, and record links.",
+        "Tuned mobile touch targets, contrast, and reduced-motion handling.",
+      ],
+    },
+    {
+      version: "2.1.1",
+      date: "2026-07-07",
+      changes: [
+        "Auto-try HTTPS and then HTTP for schemeless OAI endpoint URLs.",
+      ],
+    },
+    {
       version: "2.1.0",
       date: "2026-06-26",
       changes: [
@@ -664,6 +685,23 @@ function ChangelogScreen({ onBack }) {
       changes: [
         "Added record sharing with metadataPrefix and identifier in the Explorer URL.",
         "Improved Record view with direct OAI URL copy controls.",
+      ],
+    },
+    {
+      version: "1.1.0",
+      date: "2026-06-23",
+      changes: [
+        "Added jump-to-record support from the Explore screen.",
+        "Added copyable Explorer links for list and record views.",
+        "Improved Record view with pretty-printed XML, XML copy controls, METS/MODS section outline, and back-to-top navigation.",
+      ],
+    },
+    {
+      version: "1.0.0",
+      date: "2026-06-20",
+      changes: [
+        "Initial OAI-PMH Explorer with repository detection, metadata format and set filters, identifier listing, and record XML inspection.",
+        "Added recent endpoints and OAI URL helpers for common repository workflows.",
       ],
     },
   ];
@@ -905,7 +943,6 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   const [noRecordsMatch,   setNoRecordsMatch]   = useState(initNoRecordsMatch || false);
   const [loading,          setLoading]          = useState(false);
   const [loadError,        setLoadError]        = useState(null);
-  const [hoverRow,         setHoverRow]         = useState(null);
   const [idQuery,          setIdQuery]          = useState("");
   const [linkCopied,       setLinkCopied]       = useState(false);
   const autoLoadStarted = useRef(false);
@@ -1085,8 +1122,9 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
           <div className="filters">
             <div className="filter-row">
               <div className="filter">
-                <label className="lbl">Metadata prefix</label>
+                <label className="lbl" htmlFor="metadata-prefix">Metadata prefix</label>
                 <select
+                  id="metadata-prefix"
                   className="select"
                   value={prefix}
                   onChange={(e) => setPrefix(e.target.value)}
@@ -1101,8 +1139,9 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
               </div>
 
               <div className="filter">
-                <label className="lbl">Set</label>
+                <span className="lbl" id="set-label">Set</span>
                 <SetCombobox
+                  labelId="set-label"
                   value={setSpec}
                   query={setQuery}
                   open={setOpen}
@@ -1117,14 +1156,14 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
               </div>
             </div>
 
-            <div className="filter-row">
+            <div className="filter-row filter-row--dates">
               <div className="filter">
-                <label className="lbl">From <span className="lbl-opt">(optional)</span></label>
-                <input type="date" className="select" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <label className="lbl" htmlFor="date-from">From <span className="lbl-opt">(optional)</span></label>
+                <input id="date-from" type="date" className="select" value={from} onChange={(e) => setFrom(e.target.value)} />
               </div>
               <div className="filter">
-                <label className="lbl">Until <span className="lbl-opt">(optional)</span></label>
-                <input type="date" className="select" value={until} onChange={(e) => setUntil(e.target.value)} />
+                <label className="lbl" htmlFor="date-until">Until <span className="lbl-opt">(optional)</span></label>
+                <input id="date-until" type="date" className="select" value={until} onChange={(e) => setUntil(e.target.value)} />
               </div>
               <div className="filter filter-action">
                 <button className="btn btn-primary" onClick={triggerLoad} disabled={loading}>
@@ -1134,10 +1173,11 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
               </div>
             </div>
 
-            <div className="filter-row">
-              <div className="filter" style={{ flex: 1 }}>
-                <label className="lbl">Jump to record by identifier <span className="lbl-opt">(optional)</span></label>
+            <div className="filter-row filter-row--jump">
+              <div className="filter">
+                <label className="lbl" htmlFor="record-identifier">Jump to record by identifier</label>
                 <input
+                  id="record-identifier"
                   type="text"
                   className="select mono"
                   placeholder="oai:example.org:1234"
@@ -1160,12 +1200,11 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
             setSpec={setSpec}
             from={from}
             until={until}
-            variant="explore"
           />
 
           <div className="results">
             <div className="results-head">
-              <div className="results-caption">
+              <div className="results-caption" role="status" aria-live="polite">
                 {loaded ? (
                   <>
                     <strong>{records.length.toLocaleString("de-DE")}</strong>
@@ -1185,6 +1224,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
               {loaded && (
                 <button
                   className="cmd-copy-mini"
+                  aria-live="polite"
                   onClick={() => {
                     navigator.clipboard?.writeText(buildExplorerUrl({ url, metadataPrefix: prefix, set: setSpec, from, until }));
                     setLinkCopied(true);
@@ -1200,42 +1240,35 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
               <table className="table">
                 <thead>
                   <tr>
-                    <th style={{ width: "55%" }}>Identifier</th>
+                    <th style={{ width: "70%" }}>Identifier</th>
                     <th style={{ width: "30%" }}>Datestamp</th>
-                    <th style={{ width: "15%" }}>Deleted</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {loaded && records.map((r, i) => (
+                  {loaded && records.map((r) => (
                     <tr
                       key={r.identifier}
-                      onMouseEnter={() => setHoverRow(i)}
-                      onMouseLeave={() => setHoverRow(null)}
-                      onClick={() => onOpenRecord(r, prefix)}
-                      className={hoverRow === i ? "row-hover" : ""}
                     >
                       <td className="mono cell-id">
-                        <span className="cell-id-text">{r.identifier}</span>
+                        <span className="cell-id-content">
+                          <button className="record-link mono" onClick={() => onOpenRecord(r, prefix)}>
+                            {r.identifier}
+                          </button>
+                          {r.deleted && <span className="badge badge-deleted">deleted</span>}
+                        </span>
                       </td>
                       <td className="mono cell-date">{r.datestamp}</td>
-                      <td>
-                        {r.deleted
-                          ? <span className="badge badge-deleted">deleted</span>
-                          : <span className="badge-empty">—</span>
-                        }
-                      </td>
                     </tr>
                   ))}
                   {loading && Array.from({ length: 8 }).map((_, i) => (
                     <tr key={"sk" + i}>
                       <td><span className="skeleton" style={{ width: "70%", display: "inline-block" }} /></td>
                       <td><span className="skeleton" style={{ width: "60%", display: "inline-block" }} /></td>
-                      <td><span className="skeleton" style={{ width: "30%", display: "inline-block" }} /></td>
                     </tr>
                   ))}
                   {loaded && records.length === 0 && noRecordsMatch && (
                     <tr>
-                      <td colSpan="3" className="empty" style={{ color: "var(--text-dim)" }}>
+                      <td colSpan="2" className="empty" style={{ color: "var(--text-dim)" }}>
                         <div style={{ marginBottom: 10 }}>
                           The endpoint returned <span className="mono">noRecordsMatch</span> for this filter combination
                           (metadataPrefix, set, from, until).
@@ -1248,14 +1281,14 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
                   )}
                   {loaded && records.length === 0 && !noRecordsMatch && (
                     <tr>
-                      <td colSpan="3" className="empty" style={{ color: "var(--text-dim)" }}>
+                      <td colSpan="2" className="empty" style={{ color: "var(--text-dim)" }}>
                         No records match the current filter combination. Try adjusting the date range or set filter.
                       </td>
                     </tr>
                   )}
                   {!loaded && !loading && !loadError && (
                     <tr>
-                      <td colSpan="3" className="empty">
+                      <td colSpan="2" className="empty">
                         <button
                           className="btn btn-primary"
                           style={{ margin: "0 auto", display: "flex" }}
@@ -1268,7 +1301,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
                   )}
                   {!loaded && !loading && loadError && (
                     <tr>
-                      <td colSpan="3" className="empty" style={{ color: "oklch(0.55 0.20 25)" }}>
+                      <td colSpan="2" className="empty text-error" role="alert">
                         <div style={{ marginBottom: 12 }}>{loadError}</div>
                         <button className="btn" style={{ margin: "0 auto", display: "flex" }} onClick={triggerLoad}>
                           Retry
@@ -1309,8 +1342,9 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
 }
 
 // ── Set combobox ──────────────────────────────────────────────────────────────
-function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onClose, onSelect, onClear, options }) {
+function SetCombobox({ value, query, open, allSets, labelId, onQueryChange, onToggle, onClose, onSelect, onClear, options }) {
   const ref = useRef(null);
+  const triggerRef = useRef(null);
   useEffect(() => {
     const handler = (e) => {
       if (ref.current && !ref.current.contains(e.target)) onClose();
@@ -1320,14 +1354,45 @@ function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onC
   }, [onClose]);
 
   const selected = allSets.find((s) => s.spec === value);
+  const handleKeyDown = (e) => {
+    if (!open && ["ArrowDown", "ArrowUp"].includes(e.key)) {
+      onToggle();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "Escape" && open) {
+      onClose();
+      triggerRef.current?.focus();
+      return;
+    }
+    if (!open || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
+    const items = [...ref.current.querySelectorAll(".combo-item")];
+    const current = items.indexOf(document.activeElement);
+    const next = e.key === "ArrowDown"
+      ? Math.min(current + 1, items.length - 1)
+      : Math.max(current - 1, 0);
+    items[next]?.focus();
+    e.preventDefault();
+  };
 
   return (
-    <div className={`combobox ${open ? "is-open" : ""}`} ref={ref}>
-      <button type="button" className="combo-trigger" onClick={onToggle}>
-        {value
-          ? (<><span className="combo-spec mono">{value}</span><span className="combo-name">{selected?.name || ""}</span></>)
-          : (<span className="combo-name" style={{ color: "var(--text-dim)" }}>All sets</span>)
-        }
+    <div className={`combobox ${open ? "is-open" : ""}`} ref={ref} onKeyDown={handleKeyDown}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="combo-trigger"
+        onClick={onToggle}
+        aria-labelledby={`${labelId} set-value`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls="set-options"
+      >
+        <span id="set-value">
+          {value
+            ? (<><span className="combo-spec mono">{value}</span><span className="combo-name">{selected?.name || ""}</span></>)
+            : (<span className="combo-name" style={{ color: "var(--text-dim)" }}>All sets</span>)
+          }
+        </span>
         <span className="combo-caret">▾</span>
       </button>
       {open && (
@@ -1336,16 +1401,20 @@ function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onC
             <input
               autoFocus
               type="text"
+              aria-label="Search sets"
               placeholder="Search sets…"
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
             />
             <span className="combo-count">{options.length}</span>
           </div>
-          <div className="combo-list">
+          <div className="combo-list" id="set-options" role="listbox" aria-labelledby={labelId}>
             <button
+              type="button"
+              role="option"
+              aria-selected={!value}
               className={`combo-item ${!value ? "is-active" : ""}`}
-              onClick={onClear}
+              onClick={() => { onClear(); triggerRef.current?.focus(); }}
             >
               <span className="combo-item-name">All sets (no filter)</span>
             </button>
@@ -1355,8 +1424,11 @@ function SetCombobox({ value, query, open, allSets, onQueryChange, onToggle, onC
             {options.map((o) => (
               <button
                 key={o.spec}
+                type="button"
+                role="option"
+                aria-selected={o.spec === value}
                 className={`combo-item ${o.spec === value ? "is-active" : ""}`}
-                onClick={() => onSelect(o)}
+                onClick={() => { onSelect(o); triggerRef.current?.focus(); }}
               >
                 <span className="combo-item-name">
                   {o.name} <code className="combo-item-spec">{o.spec}</code>
@@ -1490,9 +1562,6 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
               ))}
             </select>
           </label>
-          <button className="btn-ghost" onClick={copyXml} disabled={!xml}>
-            {xmlCopied ? "✓ Copied" : "Copy XML"}
-          </button>
         </div>
       </header>
 
@@ -1504,7 +1573,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
       )}
 
       {fetchErr && (
-        <div style={{ padding: "24px 0", color: "oklch(0.55 0.20 25)", fontSize: 13 }}>
+        <div className="record-error" role="alert">
           <div style={{ marginBottom: 12 }}>
             Error: {fetchErr}
           </div>
@@ -1525,7 +1594,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div className="code-meta mono">{xml.length.toLocaleString()} bytes</div>
-              <button className="cmd-copy-mini" onClick={copyXml}>{xmlCopied ? "✓ Copied" : "Copy"}</button>
+              <button className="cmd-copy-mini" onClick={copyXml} aria-live="polite">{xmlCopied ? "✓ Copied" : "Copy"}</button>
             </div>
           </div>
           <OutlineBar sections={sections} />
