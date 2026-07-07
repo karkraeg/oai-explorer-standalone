@@ -1,7 +1,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.2.1";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -76,6 +76,13 @@ function App() {
   const [lastExploreUrl, setLastExploreUrl] = useState(null);
   const currentUrlRef = useRef("");
 
+  const writeHistoryUrl = useCallback((nextUrl, mode = "push") => {
+    if (mode === "none") return;
+    const absoluteUrl = new URL(nextUrl, location.href).href;
+    if (absoluteUrl === location.href) return;
+    history[mode === "replace" ? "replaceState" : "pushState"]({}, "", absoluteUrl);
+  }, []);
+
   const refreshEndpointSummary = useCallback(async (baseUrl) => {
     try {
       const res = await fetchApi("refreshSummary", baseUrl);
@@ -86,19 +93,37 @@ function App() {
     } catch (_) {}
   }, []);
 
-  // Restore state from explorer share URL on first load
-  useEffect(() => {
+  const restoreFromLocation = useCallback((historyMode = "none") => {
     const sp = new URLSearchParams(location.search);
     const u = sp.get("url");
-    if (!u) return;
+    if (!u) {
+      currentUrlRef.current = "";
+      setScreen("start");
+      setUrl("");
+      setRepoData(null);
+      setPrefilledFilters({});
+      setActiveRecord(null);
+      setAutoOpenRecord(null);
+      setLastExploreUrl(null);
+      setError(null);
+      return;
+    }
     const identifier    = sp.get("identifier") || "";
     const metadataPrefix = sp.get("metadataPrefix") || "";
     const set   = sp.get("set")   || "";
     const from  = sp.get("from")  || "";
     const until = sp.get("until") || "";
-    if (identifier) setAutoOpenRecord({ identifier, prefix: metadataPrefix });
-    goExplore(u, null, { metadataPrefix, set, from, until });
+    setAutoOpenRecord(identifier ? { identifier, prefix: metadataPrefix } : null);
+    goExplore(u, null, { metadataPrefix, set, from, until }, historyMode);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore state from explorer share URL on first load and browser history moves
+  useEffect(() => {
+    restoreFromLocation();
+    const onPopState = () => restoreFromLocation();
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [restoreFromLocation]);
 
   // Auto-open a record after repo data loads (triggered by share URL with identifier=)
   useEffect(() => {
@@ -109,7 +134,7 @@ function App() {
     }
   }, [screen, repoData, autoOpenRecord]);
 
-  const goExplore = useCallback(async (rawUrl, broken, overrideFilters = null) => {
+  const goExplore = useCallback(async (rawUrl, broken, overrideFilters = null, historyMode = "push") => {
     if (broken) {
       setError({ kind: broken, url: rawUrl });
       setScreen("error");
@@ -162,7 +187,7 @@ function App() {
           saveRecentEndpoint(baseUrl);
           setScreen("explore");
           const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: repo.initPrefix });
-          history.replaceState({}, "", exploreUrl);
+          writeHistoryUrl(exploreUrl, historyMode);
           setLastExploreUrl(exploreUrl);
           if (boot.data.stale || boot.data.setsHydrated === false) refreshEndpointSummary(baseUrl);
           return;
@@ -244,21 +269,32 @@ function App() {
       saveRecentEndpoint(baseUrl);
       setScreen("explore");
       const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: initParams.prefix, set: initParams.set, from: initParams.from, until: initParams.until });
-      history.replaceState({}, "", exploreUrl);
+      writeHistoryUrl(exploreUrl, historyMode);
       setLastExploreUrl(exploreUrl);
       if (!hasRestrictedFilters) refreshEndpointSummary(baseUrl);
     } catch (e) {
       setError({ kind: "unreachable", url: baseUrl });
       setScreen("error");
     }
-  }, [refreshEndpointSummary]);
+  }, [refreshEndpointSummary, writeHistoryUrl]);
 
   return (
     <div className="app">
       <TopBar
         screen={screen}
         url={url}
-        onHome={() => { setScreen("start"); history.replaceState({}, "", location.pathname); }}
+        onHome={() => {
+          currentUrlRef.current = "";
+          setScreen("start");
+          setUrl("");
+          setRepoData(null);
+          setPrefilledFilters({});
+          setActiveRecord(null);
+          setAutoOpenRecord(null);
+          setLastExploreUrl(null);
+          setError(null);
+          writeHistoryUrl(location.pathname);
+        }}
         onChangeUrl={(u) => { goExplore(u); }}
         onNavigate={(s) => setScreen(s)}
       />
@@ -277,9 +313,12 @@ function App() {
           onOpenRecord={(record, prefix) => {
             setActiveRecord({ record, prefix, formats: repoData.formats });
             setScreen("record");
-            history.replaceState({}, "", buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: prefix }));
+            writeHistoryUrl(buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: prefix }));
           }}
-          onUrlChange={(u) => setLastExploreUrl(u)}
+          onUrlChange={(u) => {
+            setLastExploreUrl(u);
+            writeHistoryUrl(u);
+          }}
         />
       )}
       {screen === "record" && activeRecord && (
@@ -290,7 +329,7 @@ function App() {
           formats={activeRecord.formats || []}
           onBack={() => {
             setScreen("explore");
-            if (lastExploreUrl) history.replaceState({}, "", lastExploreUrl);
+            if (lastExploreUrl) writeHistoryUrl(lastExploreUrl);
           }}
         />
       )}
@@ -633,6 +672,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "2.2.1",
+      date: "2026-07-07",
+      changes: [
+        "Enabled browser back and forward navigation between Start, Explore, filtered lists, and Record views.",
+      ],
+    },
     {
       version: "2.2.0",
       date: "2026-07-07",
@@ -983,7 +1029,6 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
         setLoaded(true);
         if (!token) {
           const explorerUrl = buildExplorerUrl({ url, metadataPrefix: pfx, set, from: fromDate, until: untilDate });
-          window.history.replaceState({}, "", explorerUrl);
           onUrlChange?.(explorerUrl);
         }
       } else if (res.oai_error === "noRecordsMatch") {
@@ -994,6 +1039,10 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
         setPageIndex(0);
         setLoaded(true);
         setNoRecordsMatch(true);
+        if (!token) {
+          const explorerUrl = buildExplorerUrl({ url, metadataPrefix: pfx, set, from: fromDate, until: untilDate });
+          onUrlChange?.(explorerUrl);
+        }
       } else if (res.oai_error === "badResumptionToken") {
         setRecords([]);
         setResumptionToken(null);
