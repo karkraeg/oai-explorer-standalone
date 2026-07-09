@@ -39,6 +39,8 @@ html,
 body {
   margin: 0;
   padding: 0;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 body {
   font-family: var(--font-sans);
@@ -1953,6 +1955,12 @@ input[type="date"].select {
   }
   .topbar-meta .topbar-link {
     display: none;
+  }
+  .code {
+    font-size: 11px;
+  }
+  .code-linenum {
+    padding: 0 10px 0 14px;
   }
 }
 
