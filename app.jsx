@@ -1,7 +1,8 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.2.1";
+const APP_VERSION = "2.3.0";
+const LINE_HINT_KEY = "oai_seen_line_hint";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -43,6 +44,19 @@ function buildExplorerUrl({ url, metadataPrefix, set, from, until, identifier })
   if (until)          sp.set("until", until);
   if (identifier)     sp.set("identifier", identifier);
   return `${location.origin}${location.pathname}?${sp}`;
+}
+
+function lineHashFor(sel) {
+  if (!sel) return "";
+  return sel.start === sel.end ? `#L${sel.start}` : `#L${sel.start}-L${sel.end}`;
+}
+
+function parseLineHash(hash) {
+  const m = /^#?L(\d+)(?:-L?(\d+))?$/.exec(hash || "");
+  if (!m) return null;
+  const a = parseInt(m[1], 10);
+  const b = m[2] ? parseInt(m[2], 10) : a;
+  return { start: Math.min(a, b), end: Math.max(a, b) };
 }
 
 function repoDataFromSummary(data) {
@@ -643,7 +657,9 @@ function FaqScreen({ onBack }) {
       a: "Yes — repository summaries are kept permanently so known endpoints open immediately. Stale summaries are refreshed in the background." },
     { q: "Can everybody see what I explored under 'RECENTLY USED'?",
       a: "No, that's only shown to you."
-    }
+    },
+    { q: "Can I link to a specific line in a record's XML?",
+      a: "Yes — on the record screen, click a line number to select it, or shift-click a second line to select a range, then use \"Copy link to L…\". This works like GitHub's line links. One caveat: records here aren't versioned, so the link points at the document as it was fetched at that moment. If the source repository updates the metadata later, the content — and therefore which line the link highlights — can shift or no longer match what was originally shared." }
   ];
 
   return (
@@ -672,6 +688,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "2.3.0",
+      date: "2026-07-09",
+      changes: [
+        "Added GitHub-style line links for record XML: click a line number (or shift-click a range) and copy a #L12-L34 link, with a one-time heads-up that unversioned records may not match the link later.",
+      ],
+    },
     {
       version: "2.2.1",
       date: "2026-07-07",
@@ -1499,7 +1522,13 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   const [xmlCopied, setXmlCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [oaiUrlCopied, setOaiUrlCopied] = useState(false);
+  const [lineLinkCopied, setLineLinkCopied] = useState(false);
   const [currentPrefix, setCurrentPrefix] = useState(prefix || "oai_dc");
+  const [selection, setSelection] = useState(null); // { start, end } 1-indexed line numbers
+  const [showLineHint, setShowLineHint] = useState(false);
+  const selectionAnchorRef = useRef(null);
+  const initialHashRef = useRef(location.hash);
+  const hasRestoredHashRef = useRef(false);
   const recordOaiUrl = useMemo(() => {
     const sp = new URLSearchParams({
       verb: "GetRecord",
@@ -1538,10 +1567,60 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   const dc  = xmlData?.dc  || {};
   const sections = useMemo(() => detectSections(xml), [xml]);
 
+  const maybeShowLineHint = () => {
+    try {
+      if (localStorage.getItem(LINE_HINT_KEY)) return;
+      localStorage.setItem(LINE_HINT_KEY, "1");
+    } catch (_) {}
+    setShowLineHint(true);
+  };
+
+  // Restore a shared #L12-L34 selection once the record's XML has loaded.
+  useEffect(() => {
+    if (!xml) return;
+    if (!hasRestoredHashRef.current) {
+      hasRestoredHashRef.current = true;
+      const sel = parseLineHash(initialHashRef.current);
+      if (sel) {
+        setSelection(sel);
+        selectionAnchorRef.current = sel.start;
+        maybeShowLineHint();
+        requestAnimationFrame(() => {
+          document.getElementById(`L${sel.start}`)?.scrollIntoView({ block: "center" });
+        });
+        return;
+      }
+    }
+    setSelection(null);
+    selectionAnchorRef.current = null;
+  }, [xml]);
+
+  const selectLine = (lineNum, extend) => {
+    let sel;
+    if (extend && selectionAnchorRef.current != null) {
+      const anchor = selectionAnchorRef.current;
+      sel = { start: Math.min(anchor, lineNum), end: Math.max(anchor, lineNum) };
+    } else {
+      selectionAnchorRef.current = lineNum;
+      sel = { start: lineNum, end: lineNum };
+    }
+    setSelection(sel);
+    history.replaceState({}, "", buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }) + lineHashFor(sel));
+    maybeShowLineHint();
+  };
+
   const copyXml = () => {
     navigator.clipboard?.writeText(xml);
     setXmlCopied(true);
     setTimeout(() => setXmlCopied(false), 1500);
+  };
+
+  const copyLineLink = () => {
+    if (!selection) return;
+    const link = buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }) + lineHashFor(selection);
+    navigator.clipboard?.writeText(link);
+    setLineLinkCopied(true);
+    setTimeout(() => setLineLinkCopied(false), 1500);
   };
 
   return (
@@ -1643,11 +1722,29 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div className="code-meta mono">{xml.length.toLocaleString()} bytes</div>
+              {selection && (
+                <button className="cmd-copy-mini" onClick={copyLineLink} aria-live="polite">
+                  {lineLinkCopied ? "✓ Copied" : `Copy link to ${selection.start === selection.end ? `L${selection.start}` : `L${selection.start}-${selection.end}`}`}
+                </button>
+              )}
               <button className="cmd-copy-mini" onClick={copyXml} aria-live="polite">{xmlCopied ? "✓ Copied" : "Copy"}</button>
             </div>
           </div>
           <OutlineBar sections={sections} />
-          <pre className="code"><code dangerouslySetInnerHTML={{ __html: linkXmlUrls(injectAnchors(highlightXml(xml), sections)) }} /></pre>
+          {showLineHint && (
+            <div className="line-hint" role="status">
+              <span>
+                Heads up: a line link points at the document as fetched just now. Records here aren't versioned, so if the source updates the metadata later, the content — and which line this points to — can shift.
+              </span>
+              <button
+                type="button"
+                className="line-hint-dismiss"
+                onClick={() => setShowLineHint(false)}
+                aria-label="Dismiss"
+              >×</button>
+            </div>
+          )}
+          <XmlLines xml={xml} sections={sections} selection={selection} onSelectLine={selectLine} />
         </section>
       )}
 
@@ -1669,14 +1766,43 @@ function detectSections(xml) {
   return found.length ? found : null;
 }
 
-function injectAnchors(html, sections) {
-  if (!sections) return html;
-  let result = html;
-  for (const name of sections) {
-    const re = new RegExp(`(<span class="x-tag">[\\w]*:?${name}</span>)`);
-    result = result.replace(re, `<span id="sec-${name}" class="sec-anchor"></span>$1`);
-  }
-  return result;
+function buildXmlLines(xml, sections) {
+  const remaining = new Set(sections || []);
+  return xml.split("\n").map((raw, i) => {
+    let html = highlightXml(raw);
+    for (const name of remaining) {
+      const re = new RegExp(`(<span class="x-tag">[\\w]*:?${name}</span>)`);
+      if (re.test(html)) {
+        html = html.replace(re, `<span id="sec-${name}" class="sec-anchor"></span>$1`);
+        remaining.delete(name);
+      }
+    }
+    return { num: i + 1, html: linkXmlUrls(html) };
+  });
+}
+
+function XmlLines({ xml, sections, selection, onSelectLine }) {
+  const lines = useMemo(() => buildXmlLines(xml, sections), [xml, sections]);
+  return (
+    <pre className="code">
+      <code>
+        {lines.map((l) => {
+          const isSelected = !!selection && l.num >= selection.start && l.num <= selection.end;
+          return (
+            <span key={l.num} id={`L${l.num}`} className={`code-line${isSelected ? " is-selected" : ""}`}>
+              <button
+                type="button"
+                className="code-linenum"
+                aria-label={`Select line ${l.num}`}
+                onClick={(e) => onSelectLine(l.num, e.shiftKey)}
+              >{l.num}</button>
+              <span className="code-line-content" dangerouslySetInnerHTML={{ __html: l.html }} />
+            </span>
+          );
+        })}
+      </code>
+    </pre>
+  );
 }
 
 function OutlineBar({ sections }) {
