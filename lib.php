@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 define('OAI_NS', 'http://www.openarchives.org/OAI/2.0/');
 define('DC_NS', 'http://purl.org/dc/elements/1.1/');
+define('APP_VERSION', '2.2.1');
 
 function load_env_file(string $path): void
 {
@@ -54,7 +55,7 @@ function app_bootstrap(): void
         define('APP_ENV', env_string('APP_ENV', 'development'));
         define('CACHE_TTL', env_int('CACHE_TTL', 7200, 0, 604800));
         define('FETCH_TIMEOUT', env_int('FETCH_TIMEOUT', 120, 1, 600));
-        define('OAI_USER_AGENT', env_string('OAI_USER_AGENT', 'OAI-PMH-Explorer/0.5'));
+        define('OAI_USER_AGENT', env_string('OAI_USER_AGENT', 'OAI-PMH-Explorer/' . APP_VERSION));
         define('HARVEST_DELAY_MS', env_int('HARVEST_DELAY_MS', 1000, 0, 60000));
         define('HARVEST_PAGE_SIZE', env_int('HARVEST_PAGE_SIZE', 100, 10, 1000));
         define('HARVEST_MAX_SCOPE_ENTRIES', env_int('HARVEST_MAX_SCOPE_ENTRIES', 1000000, 100, 50000000));
