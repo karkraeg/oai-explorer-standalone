@@ -2,8 +2,9 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.5.0";
 const LINE_HINT_KEY = "oai_seen_line_hint";
+const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -23,6 +24,19 @@ function saveRecentEndpoint(url) {
 function loadRecentEndpoints() {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
   catch (_) { return []; }
+}
+
+function saveLastMetadataPrefix(url, prefix) {
+  if (!url || !prefix) return;
+  try {
+    const stored = JSON.parse(localStorage.getItem(LAST_PREFIX_KEY) || "{}");
+    localStorage.setItem(LAST_PREFIX_KEY, JSON.stringify({ ...stored, [url]: prefix }));
+  } catch (_) {}
+}
+
+function loadLastMetadataPrefix(url) {
+  try { return JSON.parse(localStorage.getItem(LAST_PREFIX_KEY) || "{}")[url] || ""; }
+  catch (_) { return ""; }
 }
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -183,6 +197,7 @@ function App() {
       if (overrideFilters.from  !== undefined) filters.from  = overrideFilters.from;
       if (overrideFilters.until !== undefined) filters.until = overrideFilters.until;
     }
+    if (!filters.metadataPrefix) filters.metadataPrefix = loadLastMetadataPrefix(baseUrl);
 
     currentUrlRef.current = baseUrl;
     setUrl(baseUrl);
@@ -241,6 +256,7 @@ function App() {
       } else {
         identifyRes = await fetchApi("identify", baseUrl);
       }
+      if (!filters.metadataPrefix) filters.metadataPrefix = loadLastMetadataPrefix(baseUrl);
       setLoadingStep(1);
       const formatsRes  = await fetchApi("listMetadataFormats", baseUrl);
       setLoadingStep(2);
@@ -694,6 +710,13 @@ function FaqScreen({ onBack }) {
 function ChangelogScreen({ onBack }) {
   const entries = [
     {
+      version: "2.5.0",
+      date: "2026-07-12",
+      changes: [
+        "Remembered the last selected metadataPrefix per endpoint in localStorage.",
+      ],
+    },
+    {
       version: "2.4.0",
       date: "2026-07-12",
       changes: [
@@ -1006,7 +1029,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   const { identify, formats, sets, setsCount, setsTruncated,
           initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch } = repoData;
 
-  const defaultPrefix = prefilledFilters.metadataPrefix || initPrefix || "oai_dc";
+  const defaultPrefix = prefilledFilters.metadataPrefix || loadLastMetadataPrefix(url) || initPrefix || "oai_dc";
   const defaultSet    = prefilledFilters.set ?? "";
 
   const [prefix,   setPrefix]   = useState(defaultPrefix);
@@ -1028,6 +1051,10 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   const [idQuery,          setIdQuery]          = useState("");
   const [linkCopied,       setLinkCopied]       = useState(false);
   const autoLoadStarted = useRef(false);
+
+  useEffect(() => {
+    saveLastMetadataPrefix(url, prefix);
+  }, [url, prefix]);
 
   useEffect(() => {
     if (!loaded && !loading) {
@@ -1559,6 +1586,10 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   useEffect(() => {
     setCurrentPrefix(prefix || "oai_dc");
   }, [record.identifier, prefix]);
+
+  useEffect(() => {
+    saveLastMetadataPrefix(url, currentPrefix);
+  }, [url, currentPrefix]);
 
   useEffect(() => {
     history.replaceState({}, "", buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }));
