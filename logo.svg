@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OAI-PMH Explorer">
+  <rect width="64" height="64" rx="14" fill="#101820"/>
+  <path d="M19 22 9 32l10 10" fill="none" stroke="#9AA7B8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M45 22 55 32 45 42" fill="none" stroke="#9AA7B8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M25 44 39 20" fill="none" stroke="#2EC4C6" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="24" cy="24" r="5" fill="#2EC4C6"/>
+  <circle cx="40" cy="40" r="5" fill="#F4C95D"/>
+  <path d="M24 24h12a4 4 0 0 1 4 4v12" fill="none" stroke="#E8EEF6" stroke-width="3" stroke-linecap="round"/>
+</svg>

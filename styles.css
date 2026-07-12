@@ -923,6 +923,14 @@ code,
   border-color: var(--border-strong);
   background: var(--bg-soft);
 }
+.chip-recent {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.chip-recent:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
 .chip-broken {
   color: oklch(0.55 0.1 25);
   border-style: dashed;

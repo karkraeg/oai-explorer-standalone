@@ -615,7 +615,7 @@ function Logo({ size = 22 }) {
   return (
     <img
       className="brand-logo"
-      src="logo.png"
+      src="logo.svg"
       width={size}
       height={size}
       alt=""
@@ -962,15 +962,14 @@ function StartScreen({ onSubmit }) {
       <div className="hero">
         <div className="eyebrow">OAI-PMH 2.0 · Repository tool</div>
         <h1 className="hero-title">
-          Explore OAI-PMH <em>repositories</em>.
+          Browse OAI-PMH repositories.
         </h1>
         <p className="hero-sub">
-          Inspect endpoints, browse sets, and read records —
-          all in the browser, no command line required.
+          Inspect endpoints, browse sets, and read records.
         </p>
 
         <label className="field">
-          <span className="field-label">OAI-PMH repository URL</span>
+
           <div className="search-row">
             <input
               ref={inputRef}
@@ -982,12 +981,12 @@ function StartScreen({ onSubmit }) {
               onKeyDown={(e) => e.key === "Enter" && submit()}
             />
             <button className="btn btn-primary btn-lg" onClick={submit} disabled={!val.trim()}>
-              Connect
+              Explore
               <span className="btn-arrow">→</span>
             </button>
           </div>
           <span className="field-hint">
-            Press <span className="kbd">↵</span> or click "Connect". The URL must expose a <code>?verb=Identify</code> endpoint.
+            Press <span className="kbd">↵</span> or click "Explore".
           </span>
         </label>
 
@@ -1014,7 +1013,7 @@ function StartScreen({ onSubmit }) {
               {recent.map((u) => (
                 <button
                   key={u}
-                  className="chip"
+                  className="chip chip-recent"
                   onClick={() => onSubmit(u)}
                   title={u}
                 >
