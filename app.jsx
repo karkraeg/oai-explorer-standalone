@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: MIT */
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.0";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 
 const EXAMPLE_REPOS = [
@@ -44,6 +45,10 @@ function buildExplorerUrl({ url, metadataPrefix, set, from, until, identifier })
   if (until)          sp.set("until", until);
   if (identifier)     sp.set("identifier", identifier);
   return `${location.origin}${location.pathname}?${sp}`;
+}
+
+function xmlDownloadName(identifier, prefix) {
+  return `${identifier || "record"}--${prefix || "oai_dc"}`.replace(/[^a-z0-9._-]+/gi, "_") + ".xml";
 }
 
 function lineHashFor(sel) {
@@ -688,6 +693,14 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "2.4.0",
+      date: "2026-07-12",
+      changes: [
+        "Added XML downloads from the Record view.",
+        "Documented CLI sync, added MIT licensing, and marked source files with SPDX headers.",
+      ],
+    },
     {
       version: "2.3.0",
       date: "2026-07-09",
@@ -1615,6 +1628,17 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
     setTimeout(() => setXmlCopied(false), 1500);
   };
 
+  const downloadXml = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([xml], { type: "application/xml" }));
+    a.download = xmlDownloadName(record.identifier, currentPrefix);
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  };
+
   const copyLineLink = () => {
     if (!selection) return;
     const link = buildExplorerUrl({ url, identifier: record.identifier, metadataPrefix: currentPrefix }) + lineHashFor(selection);
@@ -1727,6 +1751,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
                   {lineLinkCopied ? "✓ Copied" : `Copy link to ${selection.start === selection.end ? `L${selection.start}` : `L${selection.start}-${selection.end}`}`}
                 </button>
               )}
+              <button className="cmd-copy-mini" onClick={downloadXml}>Download XML</button>
               <button className="cmd-copy-mini" onClick={copyXml} aria-live="polite">{xmlCopied ? "✓ Copied" : "Copy"}</button>
             </div>
           </div>

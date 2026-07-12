@@ -1,17 +1,17 @@
 # OAI-PMH Explorer
 
-Ein leichter OAI-PMH-Client im Browser. Die App verbindet sich mit einem OAI-PMH-Endpoint, liest Repository-Metadaten, lädt Identifier-Listen mit Filtern und zeigt einzelne Records inklusive Raw-XML an.
+Ein OAI-PMH-Client im Browser. Die App verbindet sich mit einem OAI-PMH-Endpoint, liest Repository-Metadaten, lädt Identifier-Listen mit Filtern und zeigt einzelne Records inklusive Raw-XML an.
 
 ## Was ist das?
 
-Dieses Repository enthaelt eine kleine Web-App mit:
+Dieses Repository enthaelt eine Web-App mit:
 
 - Frontend in `index.html`, `app.jsx`, `styles.css`
 - PHP-Backend in `api.php` als Proxy/Parser für OAI-PMH
 - Permanenter Repository-Summary-Cache, Kurzzeit-Response-Cache und optionaler Background-Identifier-Harvest in SQLite oder Postgres
 - Docker-Compose-Stack mit Nginx, PHP-FPM, Worker und Postgres
 
-Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webpack).
+Die App nutzt im Browser React & Babel Standalone (ohne Build-Step).
 
 ## Wie funktioniert es?
 
@@ -25,11 +25,40 @@ Die App nutzt im Browser React + Babel Standalone (kein Build-Step mit Vite/Webp
 
 Wichtig: Ganze Records und XML-Payloads werden nicht im Harvest-Cache gespeichert.
 
+### Caching-Flow
+
+```mermaid
+flowchart TD
+    A[Endpoint-URL aufgerufen] --> B{Summary bekannt?}
+    B -- nein --> C[Live: Identify + ListMetadataFormats\n+ ListSets + erste ListIdentifiers-Seite]
+    C --> D[Summary dauerhaft speichern]
+    D --> E[Anzeige]
+    B -- ja --> F{stale? aelter als CACHE_TTL}
+    F -- nein --> E
+    F -- ja --> G[Alte Summary sofort anzeigen]
+    G --> H[Im Hintergrund refreshSummary anstossen]
+    H --> D
+
+    E --> I[ListIdentifiers angefragt]
+    I --> J{Lokaler Harvest-Scope vorhanden?}
+    J -- ja --> K[Seite aus DB liefern, keine Anfrage an Quelle]
+    J -- nein --> L[Live-Seite holen + Response cachen]
+    L --> M[Harvest-Job einreihen]
+    M --> N[worker.php holt komplette Liste\nnach und nach, mit Pause HARVEST_DELAY_MS]
+    N --> J
+
+    E --> O[GetRecord angefragt]
+    O --> P[Immer live, nie gecacht]
+```
+
+`GetRecord` ist nie gecacht: ein Record kann sich jederzeit aendern, User soll aktuellen Stand sehen.
+
+SQLite und Postgres verhalten sich hier identisch — beide sind nur die Storage-Engine hinter denselben Cache-Funktionen (`get_cached`, `store_cache`, `get_endpoint_summary` usw.). Unterschiede gibt es nur intern bei Migrationen und Datentypen (z. B. Boolean-Handling), nicht im Caching-Verhalten selbst.
+
 ## Voraussetzungen
 
-- PHP 8.x empfohlen
+- PHP 8.x
 - PHP-Extensions: `dom`, `pdo_sqlite` oder `pdo_pgsql` (optional `curl`, sonst Fallback via `file_get_contents`)
-- Internetzugang zu den OAI-PMH-Endpoints
 
 ## Development Server starten (einfach)
 
@@ -76,7 +105,7 @@ Beispiel:
 APP_ENV=development
 FETCH_TIMEOUT=60
 CACHE_TTL=7200
-OAI_USER_AGENT=OAI-PMH-Explorer/2.2.1
+OAI_USER_AGENT=OAI-PMH-Explorer/2.4.0
 HARVEST_DELAY_MS=1000
 HARVEST_MAX_SCOPE_ENTRIES=1000000
 ```
@@ -140,14 +169,23 @@ http://127.0.0.1:8000/?nocache=1
 
 Wichtig: Der `nocache`-Parameter ist nur aktiv, wenn `APP_ENV != production`.
 
-## Bekannte Hinweise
+## Sync from CLI
+
+Optional zeigt die Explore-Ansicht ein `uvx ometha`-Kommando fuer die aktuellen Filter. Das ruft `ometha` direkt mit passenden OAI-PMH-Parametern auf:
+
+```bash
+uvx ometha default -p 1 --baseurl https://example.org/oai --metadataprefix oai_dc --set example:set --fromdate 2024-01-01 --untildate 2024-12-31
+```
+
+Nur gesetzte Filter werden ins Kommando uebernommen.
+
+## Sonstige Hinweise
 
 - Bei nicht erreichbaren Hosts liefert die API `kind: "unreachable"`.
 - Bei nicht-OAI/XML-Antworten liefert die API `kind: "not-oai"`.
 - `ListSets` kann serverseitig abgeschnitten sein; das wird als `truncated` zurueckgegeben.
 - Repository-Summaries bleiben dauerhaft gespeichert; nach `CACHE_TTL` werden sie beim Wiederbesuch im Hintergrund aktualisiert.
 - `resumptionToken`-Werte koennen serverseitig ablaufen; dann muss die Identifier-Liste ab Seite 1 neu geladen werden.
-- `GetRecord`-XML wird nicht langfristig gecacht.
 
 ## Deployment (einfach)
 
@@ -164,4 +202,4 @@ Wichtig:
 
 ## Lizenz
 
-Aktuell keine Lizenzdatei hinterlegt.
+MIT. Siehe [LICENSE](LICENSE).

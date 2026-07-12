@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 FROM php:8.3-fpm
 
 RUN apt-get update \
