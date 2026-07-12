@@ -2,9 +2,10 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "3.0.0";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
+const THEME_KEY = "oai_theme";
 
 const EXAMPLE_REPOS = [
   { label: "Deutsche Digitale Bibliothek", url: "https://oai.deutsche-digitale-bibliothek.de/oai" },
@@ -37,6 +38,11 @@ function saveLastMetadataPrefix(url, prefix) {
 function loadLastMetadataPrefix(url) {
   try { return JSON.parse(localStorage.getItem(LAST_PREFIX_KEY) || "{}")[url] || ""; }
   catch (_) { return ""; }
+}
+
+function loadTheme() {
+  try { return localStorage.getItem(THEME_KEY) || "light"; }
+  catch (_) { return "light"; }
 }
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -107,7 +113,13 @@ function App() {
   const [error, setError] = useState(null);
   const [autoOpenRecord, setAutoOpenRecord] = useState(null); // { identifier, prefix } — set by initFromUrl
   const [lastExploreUrl, setLastExploreUrl] = useState(null);
+  const [theme, setTheme] = useState(loadTheme);
   const currentUrlRef = useRef("");
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem(THEME_KEY, theme); } catch (_) {}
+  }, [theme]);
 
   const writeHistoryUrl = useCallback((nextUrl, mode = "push") => {
     if (mode === "none") return;
@@ -332,6 +344,8 @@ function App() {
         }}
         onChangeUrl={(u) => { goExplore(u); }}
         onNavigate={(s) => setScreen(s)}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
       />
 
       {screen === "start" && (
@@ -611,7 +625,7 @@ function Logo({ size = 22 }) {
 }
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
-function TopBar({ screen, url, onHome, onChangeUrl, onNavigate }) {
+function TopBar({ screen, url, onHome, onChangeUrl, onNavigate, theme, onToggleTheme }) {
   const showSwitcher = screen === "explore" || screen === "record";
   const [val, setVal] = useState(url || "");
   useEffect(() => { setVal(url || ""); }, [url]);
@@ -652,6 +666,7 @@ function TopBar({ screen, url, onHome, onChangeUrl, onNavigate }) {
           )}
           <button className={`topbar-link ${screen === "faq"     ? "is-active" : ""}`} onClick={() => onNavigate("faq")}>FAQ</button>
           <button className={`topbar-link ${screen === "imprint" ? "is-active" : ""}`} onClick={() => onNavigate("imprint")}>Imprint</button>
+          <button className="topbar-link" onClick={onToggleTheme}>{theme === "dark" ? "Light" : "Dark"}</button>
           <a className="topbar-link" href="https://github.com/karkraeg/oai-explorer-standalone" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>
       </div>
@@ -709,6 +724,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "3.0.0",
+      date: "2026-07-12",
+      changes: [
+        "Added a persisted light/dark theme toggle.",
+      ],
+    },
     {
       version: "2.6.0",
       date: "2026-07-12",
@@ -892,11 +914,11 @@ function ImprintScreen({ onBack }) {
       <section className="doc-section">
         <h2 className="doc-h2">Cookies and local storage</h2>
         <p className="doc-p">
-          This site sets <strong>no cookies</strong>. It stores one entry in your
-          browser's <code>localStorage</code> (key: <code>oai_recent_endpoints</code>)
-          to remember the last five OAI-PMH endpoints you visited. This data never
-          leaves your device and is not shared with any third party. You can clear it
-          at any time via your browser's developer tools.
+          This site sets <strong>no cookies</strong>. It uses your browser's
+          <code>localStorage</code> to remember recent endpoints, metadataPrefix
+          choices, and theme. This data never leaves your device and is not shared
+          with any third party. You can clear it at any time via your browser's
+          developer tools.
         </p>
       </section>
     </main>

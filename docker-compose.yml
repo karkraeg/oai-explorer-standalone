@@ -20,7 +20,7 @@ services:
       DATABASE_PASSWORD: oai
       FETCH_TIMEOUT: 120
       CACHE_TTL: 7200
-      OAI_USER_AGENT: OAI-PMH-Explorer/2.6.0
+      OAI_USER_AGENT: OAI-PMH-Explorer/3.0.0
     volumes:
       - .:/var/www/html
     depends_on:
@@ -37,7 +37,7 @@ services:
       DATABASE_PASSWORD: oai
       FETCH_TIMEOUT: 120
       CACHE_TTL: 7200
-      OAI_USER_AGENT: OAI-PMH-Explorer/2.6.0
+      OAI_USER_AGENT: OAI-PMH-Explorer/3.0.0
       HARVEST_DELAY_MS: 3000
       HARVEST_PAGE_SIZE: 100
       HARVEST_MAX_SCOPE_ENTRIES: 1000000
