@@ -1688,6 +1688,9 @@ input[type="date"].select {
 .code-line.is-selected {
   background: oklch(0.55 0.13 200 / 0.16);
 }
+.code-line.is-outline-highlighted {
+  background: oklch(0.8 0.12 80 / 0.14);
+}
 .code-linenum {
   flex: 0 0 3.4em;
   padding: 0 14px 0 20px;
@@ -1705,6 +1708,9 @@ input[type="date"].select {
 }
 .code-line.is-selected .code-linenum {
   color: oklch(0.78 0.13 200);
+}
+.code-line.is-outline-highlighted .code-linenum {
+  color: oklch(0.82 0.12 80);
 }
 .code-line-content {
   white-space: pre;

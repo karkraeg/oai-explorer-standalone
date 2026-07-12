@@ -2,7 +2,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.6.0";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
 
@@ -709,6 +709,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "2.6.0",
+      date: "2026-07-12",
+      changes: [
+        "Made the XML outline work across metadata prefixes, including namespace-aware MARC tag jumps with highlighted target lines.",
+      ],
+    },
     {
       version: "2.5.0",
       date: "2026-07-12",
@@ -1565,6 +1572,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
   const [lineLinkCopied, setLineLinkCopied] = useState(false);
   const [currentPrefix, setCurrentPrefix] = useState(prefix || "oai_dc");
   const [selection, setSelection] = useState(null); // { start, end } 1-indexed line numbers
+  const [outlineLine, setOutlineLine] = useState(null);
   const [showLineHint, setShowLineHint] = useState(false);
   const selectionAnchorRef = useRef(null);
   const initialHashRef = useRef(location.hash);
@@ -1636,6 +1644,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
       }
     }
     setSelection(null);
+    setOutlineLine(null);
     selectionAnchorRef.current = null;
   }, [xml]);
 
@@ -1676,6 +1685,11 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
     navigator.clipboard?.writeText(link);
     setLineLinkCopied(true);
     setTimeout(() => setLineLinkCopied(false), 1500);
+  };
+
+  const jumpToSection = (section) => {
+    setOutlineLine(section.line);
+    document.getElementById(`L${section.line}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   return (
@@ -1786,7 +1800,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
               <button className="cmd-copy-mini" onClick={copyXml} aria-live="polite">{xmlCopied ? "✓ Copied" : "Copy"}</button>
             </div>
           </div>
-          <OutlineBar sections={sections} />
+          <OutlineBar sections={sections} onJump={jumpToSection} />
           {showLineHint && (
             <div className="line-hint" role="status">
               <span>
@@ -1800,7 +1814,7 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
               >×</button>
             </div>
           )}
-          <XmlLines xml={xml} sections={sections} selection={selection} onSelectLine={selectLine} />
+          <XmlLines xml={xml} sections={sections} selection={selection} outlineLine={outlineLine} onSelectLine={selectLine} />
         </section>
       )}
 
@@ -1809,43 +1823,87 @@ function RecordScreen({ url, record, prefix, formats, onBack }) {
 }
 
 // ── XML section outline ───────────────────────────────────────────────────────
-const METS_SECTIONS = ['metsHdr','dmdSec','amdSec','fileSec','structMap','structLink','behaviorSec'];
-const MODS_SECTIONS = ['titleInfo','name','originInfo','physicalDescription','abstract','subject','relatedItem','location','accessCondition','recordInfo'];
-
 function detectSections(xml) {
   if (!xml) return null;
-  const isMets = xml.includes('www.loc.gov/METS/');
-  const isMods = xml.includes('www.loc.gov/mods');
-  if (!isMets && !isMods) return null;
-  const candidates = isMets ? METS_SECTIONS : MODS_SECTIONS;
-  const found = candidates.filter(name => new RegExp(`<[\\w]*:?${name}[\\s>/]`).test(xml));
-  return found.length ? found : null;
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  if (doc.querySelector("parsererror")) return null;
+  const metadata = findElement(doc.documentElement, "metadata");
+  const root = firstElementChild(metadata) || doc.documentElement;
+  const children = Array.from(root.children || []);
+  const sections = children.length ? children : [root];
+  const lines = xml.split("\n");
+  const seen = new Set();
+  return sections.map((el) => {
+    const name = sectionLabel(el);
+    if (seen.has(name)) return null;
+    seen.add(name);
+    const line = findElementLine(lines, el);
+    return { id: `sec-${name.replace(/[^\w.-]+/g, "_")}-${line || seen.size}`, name, line: line || 1 };
+  }).filter(Boolean);
+}
+
+function sectionLabel(el) {
+  const name = el.nodeName || el.localName;
+  for (const attr of ["tag", "code", "type", "name", "ID", "id"]) {
+    const value = el.getAttribute?.(attr);
+    if (value) return `${name} ${attr}=${value}`;
+  }
+  return name;
+}
+
+function findElementLine(lines, el) {
+  const localName = el.localName || el.nodeName;
+  const tagStart = `<\\s*[\\w.-]*:?${escapeRegExp(localName)}[\\s>/]`;
+  const attr = ["tag", "code", "type", "name", "ID", "id"].find(name => el.getAttribute?.(name));
+  if (attr) {
+    const value = escapeRegExp(el.getAttribute(attr));
+    const withAttr = new RegExp(`<\\s*[\\w.-]*:?${escapeRegExp(localName)}\\b[^>]*\\s${attr}=(["'])${value}\\1`);
+    const line = lines.findIndex(raw => withAttr.test(raw)) + 1;
+    if (line) return line;
+  }
+  return lines.findIndex(raw => new RegExp(tagStart).test(raw)) + 1;
+}
+
+function findElement(el, localName) {
+  if (!el) return null;
+  if (el.localName === localName) return el;
+  for (const child of el.children || []) {
+    const found = findElement(child, localName);
+    if (found) return found;
+  }
+  return null;
+}
+
+function firstElementChild(el) {
+  return Array.from(el?.children || [])[0] || null;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function buildXmlLines(xml, sections) {
-  const remaining = new Set(sections || []);
+  const sectionsByLine = new Map((sections || []).map(section => [section.line, section]));
   return xml.split("\n").map((raw, i) => {
     let html = highlightXml(raw);
-    for (const name of remaining) {
-      const re = new RegExp(`(<span class="x-tag">[\\w]*:?${name}</span>)`);
-      if (re.test(html)) {
-        html = html.replace(re, `<span id="sec-${name}" class="sec-anchor"></span>$1`);
-        remaining.delete(name);
-      }
+    const section = sectionsByLine.get(i + 1);
+    if (section) {
+      html = `<span id="${section.id}" class="sec-anchor"></span>${html}`;
     }
     return { num: i + 1, html: linkXmlUrls(html) };
   });
 }
 
-function XmlLines({ xml, sections, selection, onSelectLine }) {
+function XmlLines({ xml, sections, selection, outlineLine, onSelectLine }) {
   const lines = useMemo(() => buildXmlLines(xml, sections), [xml, sections]);
   return (
     <pre className="code">
       <code>
         {lines.map((l) => {
           const isSelected = !!selection && l.num >= selection.start && l.num <= selection.end;
+          const isOutlineHighlighted = l.num === outlineLine;
           return (
-            <span key={l.num} id={`L${l.num}`} className={`code-line${isSelected ? " is-selected" : ""}`}>
+            <span key={l.num} id={`L${l.num}`} className={`code-line${isSelected ? " is-selected" : ""}${isOutlineHighlighted ? " is-outline-highlighted" : ""}`}>
               <button
                 type="button"
                 className="code-linenum"
@@ -1861,21 +1919,21 @@ function XmlLines({ xml, sections, selection, onSelectLine }) {
   );
 }
 
-function OutlineBar({ sections }) {
+function OutlineBar({ sections, onJump }) {
   if (!sections?.length) return null;
   return (
     <nav className="xml-outline" aria-label="Document sections">
       <span className="xml-outline-label">Jump to</span>
-      {sections.map(name => (
+      {sections.map(section => (
         <a
-          key={name}
+          key={section.id}
           className="xml-outline-link"
-          href={`#sec-${name}`}
+          href={`#${section.id}`}
           onClick={(e) => {
             e.preventDefault();
-            document.getElementById(`sec-${name}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            onJump(section);
           }}
-        >{name}</a>
+        >{section.name}</a>
       ))}
     </nav>
   );
