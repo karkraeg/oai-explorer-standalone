@@ -305,8 +305,12 @@ function parse_oai_xml(string $raw, string $action): array
         return ['ok' => false, 'error' => 'Response is not valid XML — this URL may not be an OAI-PMH endpoint', 'kind' => 'not-oai'];
     }
 
+    if ($dom->documentElement === null || $dom->documentElement->localName !== 'OAI-PMH') {
+        return ['ok' => false, 'error' => 'Root element is not <OAI-PMH> — this URL may not be an OAI-PMH endpoint', 'kind' => 'not-oai'];
+    }
+
     $xp = new DOMXPath($dom);
-    $actual_oai_ns = $dom->documentElement?->namespaceURI ?: OAI_NS;
+    $actual_oai_ns = $dom->documentElement->namespaceURI ?: OAI_NS;
     $xp->registerNamespace('oai', $actual_oai_ns);
     $xp->registerNamespace('dc', DC_NS);
     $xp->registerNamespace('oai_dc', 'http://www.openarchives.org/OAI/2.0/oai_dc/');
@@ -319,11 +323,32 @@ function parse_oai_xml(string $raw, string $action): array
         return ['ok' => false, 'error' => "$code: $msg", 'oai_error' => $code];
     }
 
+    $expected_verb = expected_oai_verb($action);
+    if ($expected_verb !== null) {
+        $request_nodes = $xp->query('//oai:request');
+        $actual_verb = ($request_nodes && $request_nodes->length > 0) ? $request_nodes->item(0)->getAttribute('verb') : '';
+        if ($actual_verb !== '' && $actual_verb !== $expected_verb) {
+            return ['ok' => false, 'error' => "Response verb \"$actual_verb\" does not match requested verb \"$expected_verb\" — this URL may not be an OAI-PMH endpoint", 'kind' => 'not-oai'];
+        }
+    }
+
     try {
         return ['ok' => true, 'data' => parse_response($xp, $action)];
     } catch (Throwable $e) {
         return ['ok' => false, 'error' => $e->getMessage()];
     }
+}
+
+function expected_oai_verb(string $action): ?string
+{
+    return match ($action) {
+        'identify' => 'Identify',
+        'listMetadataFormats' => 'ListMetadataFormats',
+        'listSets' => 'ListSets',
+        'listIdentifiers' => 'ListIdentifiers',
+        'getRecord' => 'GetRecord',
+        default => null,
+    };
 }
 
 function parse_response(DOMXPath $xp, string $action): array
