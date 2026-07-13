@@ -2,7 +2,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "3.0.2";
+const APP_VERSION = "3.0.3";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
 const THEME_KEY = "oai_theme";
@@ -209,6 +209,7 @@ function App() {
       if (overrideFilters.from  !== undefined) filters.from  = overrideFilters.from;
       if (overrideFilters.until !== undefined) filters.until = overrideFilters.until;
     }
+    const hasExplicitPrefix = !!filters.metadataPrefix;
     if (!filters.metadataPrefix) filters.metadataPrefix = loadLastMetadataPrefix(baseUrl);
 
     currentUrlRef.current = baseUrl;
@@ -232,6 +233,22 @@ function App() {
             repo.initToken = null;
             repo.initLoaded = false;
             repo.initNoRecordsMatch = false;
+          }
+          if (hasExplicitPrefix) {
+            const idRes = await fetchApi("listIdentifiers", baseUrl, { prefix: repo.initPrefix });
+            if (idRes.ok) {
+              repo.initRecords = idRes.data.identifiers || [];
+              repo.initTotal = idRes.data.total ?? null;
+              repo.initToken = idRes.data.resumptionToken ?? null;
+              repo.initLoaded = true;
+              repo.initNoRecordsMatch = false;
+            } else if (idRes.oai_error === "noRecordsMatch") {
+              repo.initRecords = [];
+              repo.initTotal = null;
+              repo.initToken = null;
+              repo.initLoaded = true;
+              repo.initNoRecordsMatch = true;
+            }
           }
           setRepoData(repo);
           saveRecentEndpoint(baseUrl);
@@ -735,6 +752,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "3.0.3",
+      date: "2026-07-13",
+      changes: [
+        "Fixed shared explorer links so identifier results appear immediately when metadataPrefix is present.",
+      ],
+    },
     {
       version: "3.0.2",
       date: "2026-07-13",
