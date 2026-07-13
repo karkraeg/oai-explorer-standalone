@@ -2,7 +2,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "3.0.3";
+const APP_VERSION = "3.0.4";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
 const THEME_KEY = "oai_theme";
@@ -377,6 +377,13 @@ function App() {
       )}
       {screen === "explore" && repoData && (
         <ExploreScreen
+          key={[
+            url,
+            prefilledFilters.metadataPrefix || repoData.initPrefix || "",
+            prefilledFilters.set || "",
+            prefilledFilters.from || "",
+            prefilledFilters.until || "",
+          ].join("|")}
           url={url}
           repoData={repoData}
           prefilledFilters={prefilledFilters}
@@ -752,6 +759,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "3.0.4",
+      date: "2026-07-13",
+      changes: [
+        "Fixed explorer state resets when opening shared links from an already loaded page.",
+      ],
+    },
     {
       version: "3.0.3",
       date: "2026-07-13",
