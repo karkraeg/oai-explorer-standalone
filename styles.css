@@ -690,6 +690,11 @@ code,
   background: var(--bg-soft);
   font-weight: 500;
 }
+.topbar-meta .theme-toggle {
+  min-width: 34px;
+  line-height: 1;
+  font-size: 15px;
+}
 
 .brand-logo {
   display: block;
@@ -1992,6 +1997,11 @@ input[type="date"].select {
   }
   .topbar-meta .topbar-link {
     display: none;
+  }
+  .topbar-meta .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .code {
     font-size: 11px;

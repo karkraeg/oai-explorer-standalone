@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 define('OAI_NS', 'http://www.openarchives.org/OAI/2.0/');
 define('DC_NS', 'http://purl.org/dc/elements/1.1/');
-define('APP_VERSION', '3.0.0');
+define('APP_VERSION', '3.0.1');
 
 function load_env_file(string $path): void
 {

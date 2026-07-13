@@ -2,7 +2,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.0.1";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
 const THEME_KEY = "oai_theme";
@@ -666,7 +666,14 @@ function TopBar({ screen, url, onHome, onChangeUrl, onNavigate, theme, onToggleT
           )}
           <button className={`topbar-link ${screen === "faq"     ? "is-active" : ""}`} onClick={() => onNavigate("faq")}>FAQ</button>
           <button className={`topbar-link ${screen === "imprint" ? "is-active" : ""}`} onClick={() => onNavigate("imprint")}>Imprint</button>
-          <button className="topbar-link" onClick={onToggleTheme}>{theme === "dark" ? "Light" : "Dark"}</button>
+          <button
+            className="topbar-link theme-toggle"
+            onClick={onToggleTheme}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            title={theme === "dark" ? "Light theme" : "Dark theme"}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           <a className="topbar-link" href="https://github.com/karkraeg/oai-explorer-standalone" target="_blank" rel="noreferrer">GitHub ↗</a>
         </nav>
       </div>
@@ -724,6 +731,13 @@ function FaqScreen({ onBack }) {
 // ── Changelog ─────────────────────────────────────────────────────────────────
 function ChangelogScreen({ onBack }) {
   const entries = [
+    {
+      version: "3.0.1",
+      date: "2026-07-13",
+      changes: [
+        "Made the light/dark theme toggle an icon button that stays visible on mobile.",
+      ],
+    },
     {
       version: "3.0.0",
       date: "2026-07-12",
