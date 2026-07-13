@@ -228,6 +228,10 @@ function App() {
           if (filters.metadataPrefix && filters.metadataPrefix !== repo.initPrefix) {
             repo.initPrefix = filters.metadataPrefix;
             repo.initTotal = null;
+            repo.initRecords = [];
+            repo.initToken = null;
+            repo.initLoaded = false;
+            repo.initNoRecordsMatch = false;
           }
           setRepoData(repo);
           saveRecentEndpoint(baseUrl);
