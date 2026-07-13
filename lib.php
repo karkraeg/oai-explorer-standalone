@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 define('OAI_NS', 'http://www.openarchives.org/OAI/2.0/');
 define('DC_NS', 'http://purl.org/dc/elements/1.1/');
-define('APP_VERSION', '3.0.1');
+define('APP_VERSION', '3.0.2');
 
 function load_env_file(string $path): void
 {
@@ -544,7 +544,7 @@ function identifier_page_cache_key(string $key): string
 function cache_and_slice_identifier_page(PDO $db, string $cache_key, array $data): array
 {
     $identifiers = $data['identifiers'] ?? [];
-    if (!is_array($identifiers) || count($identifiers) <= HARVEST_PAGE_SIZE) {
+    if (!is_array($identifiers) || (count($identifiers) <= HARVEST_PAGE_SIZE && empty($data['resumptionToken']))) {
         return $data;
     }
 

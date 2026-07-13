@@ -2,7 +2,7 @@
 /* global React, ReactDOM */
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = "3.0.1";
+const APP_VERSION = "3.0.2";
 const LINE_HINT_KEY = "oai_seen_line_hint";
 const LAST_PREFIX_KEY = "oai_last_metadata_prefix";
 const THEME_KEY = "oai_theme";
@@ -235,7 +235,7 @@ function App() {
           const exploreUrl = buildExplorerUrl({ url: baseUrl, metadataPrefix: repo.initPrefix });
           writeHistoryUrl(exploreUrl, historyMode);
           setLastExploreUrl(exploreUrl);
-          if (boot.data.stale || boot.data.setsHydrated === false) refreshEndpointSummary(baseUrl);
+          if (boot.data.stale) refreshEndpointSummary(baseUrl);
           return;
         }
       } catch (_) {}
@@ -732,6 +732,13 @@ function FaqScreen({ onBack }) {
 function ChangelogScreen({ onBack }) {
   const entries = [
     {
+      version: "3.0.2",
+      date: "2026-07-13",
+      changes: [
+        "Fixed cached identifier starts and lazy-loaded large set lists.",
+      ],
+    },
+    {
       version: "3.0.1",
       date: "2026-07-13",
       changes: [
@@ -1068,7 +1075,7 @@ function StartScreen({ onSubmit }) {
 
 // ── Screen 2 — Explore ────────────────────────────────────────────────────────
 function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlChange }) {
-  const { identify, formats, sets, setsCount, setsTruncated,
+  const { identify, formats, sets: initialSets, setsCount, setsTruncated,
           initPrefix, initRecords, initTotal, initToken, initLoaded, initNoRecordsMatch } = repoData;
 
   const defaultPrefix = prefilledFilters.metadataPrefix || loadLastMetadataPrefix(url) || initPrefix || "oai_dc";
@@ -1078,6 +1085,8 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   const [setSpec,  setSetSpec]  = useState(defaultSet);
   const [setQuery, setSetQuery] = useState("");
   const [setOpen,  setSetOpen]  = useState(false);
+  const [sets,     setSets]     = useState(initialSets || []);
+  const [setsLoading, setSetsLoading] = useState(false);
   const [from,     setFrom]     = useState(prefilledFilters.from  || "");
   const [until,    setUntil]    = useState(prefilledFilters.until || "");
 
@@ -1164,6 +1173,24 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
   }, [url]);
 
   const triggerLoad = () => loadIdentifiers({ pfx: prefix, set: setSpec, fromDate: from, untilDate: until, token: "", history: [] });
+
+  const loadSets = useCallback(async () => {
+    if (sets.length > 0 || setsLoading || setsCount <= 0) return;
+    setSetsLoading(true);
+    try {
+      const res = await fetchApi("listSets", url);
+      if (res.ok) setSets(res.data.sets || []);
+    } catch (_) {
+    } finally {
+      setSetsLoading(false);
+    }
+  }, [sets.length, setsLoading, setsCount, url]);
+
+  const toggleSets = () => {
+    const nextOpen = !setOpen;
+    setSetOpen(nextOpen);
+    if (nextOpen) loadSets();
+  };
 
   useEffect(() => {
     if (autoLoadStarted.current || loaded || loading || loadError || initNoRecordsMatch) return;
@@ -1301,11 +1328,12 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
                   open={setOpen}
                   allSets={sets}
                   onQueryChange={setSetQuery}
-                  onToggle={() => setSetOpen(!setOpen)}
+                  onToggle={toggleSets}
                   onClose={() => setSetOpen(false)}
                   onSelect={(s) => { setSetSpec(s.spec); setSetOpen(false); setSetQuery(""); }}
                   onClear={() => { setSetSpec(""); setSetOpen(false); }}
                   options={filteredSets}
+                  loading={setsLoading}
                 />
               </div>
             </div>
@@ -1496,7 +1524,7 @@ function ExploreScreen({ url, repoData, prefilledFilters, onOpenRecord, onUrlCha
 }
 
 // ── Set combobox ──────────────────────────────────────────────────────────────
-function SetCombobox({ value, query, open, allSets, labelId, onQueryChange, onToggle, onClose, onSelect, onClear, options }) {
+function SetCombobox({ value, query, open, allSets, labelId, onQueryChange, onToggle, onClose, onSelect, onClear, options, loading = false }) {
   const ref = useRef(null);
   const triggerRef = useRef(null);
   useEffect(() => {
@@ -1573,7 +1601,7 @@ function SetCombobox({ value, query, open, allSets, labelId, onQueryChange, onTo
               <span className="combo-item-name">All sets (no filter)</span>
             </button>
             {options.length === 0 && (
-              <div className="combo-empty">No matches</div>
+              <div className="combo-empty">{loading ? "Loading sets…" : "No matches"}</div>
             )}
             {options.map((o) => (
               <button

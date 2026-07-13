@@ -110,6 +110,15 @@ $oai_url = build_oai_url($base_url, $params);
 
 $cacheable = $action !== 'getRecord' && $action !== 'listIdentifiers';
 $cache_key = md5($oai_url);
+if ($action === 'listIdentifiers' && $db !== null && empty($_GET['resumptionToken']) && !$nocache) {
+    try {
+        $page = cached_identifier_page($db, $cache_key, 0);
+        if ($page !== null) {
+            echo json_encode(['ok' => true, 'data' => $page]);
+            exit;
+        }
+    } catch (Throwable $e) {}
+}
 if ($db !== null && $cacheable && !$nocache) {
     try {
         $cached = get_cached($db, $cache_key);
