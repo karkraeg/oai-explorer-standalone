@@ -96,6 +96,11 @@ function migrate_db(PDO $db): void
                 summary_json TEXT NOT NULL,
                 refreshed_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS endpoint_rate_limits (
+                target_key TEXT PRIMARY KEY,
+                window_started_at INTEGER NOT NULL,
+                request_count INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS harvest_scopes (
                 id BIGSERIAL PRIMARY KEY,
                 base_url TEXT NOT NULL,
@@ -138,6 +143,7 @@ function migrate_db(PDO $db): void
             CREATE INDEX IF NOT EXISTS idx_entries_scope_deleted ON harvest_entries(scope_id, deleted);
             CREATE INDEX IF NOT EXISTS idx_scopes_accessed ON harvest_scopes(last_accessed_at);
             CREATE INDEX IF NOT EXISTS idx_jobs_status ON harvest_jobs(status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON endpoint_rate_limits(window_started_at);
             ALTER TABLE harvest_scopes ADD COLUMN IF NOT EXISTS expected_total INTEGER;
         ");
         return;
@@ -153,6 +159,11 @@ function migrate_db(PDO $db): void
             base_url TEXT PRIMARY KEY,
             summary_json TEXT NOT NULL,
             refreshed_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS endpoint_rate_limits (
+            target_key TEXT PRIMARY KEY,
+            window_started_at INTEGER NOT NULL,
+            request_count INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS harvest_scopes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,6 +207,7 @@ function migrate_db(PDO $db): void
         CREATE INDEX IF NOT EXISTS idx_entries_scope_deleted ON harvest_entries(scope_id, deleted);
         CREATE INDEX IF NOT EXISTS idx_scopes_accessed ON harvest_scopes(last_accessed_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_status ON harvest_jobs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON endpoint_rate_limits(window_started_at);
     ");
     ensure_sqlite_column($db, 'harvest_scopes', 'expected_total', 'INTEGER');
 }
@@ -265,6 +277,31 @@ function store_endpoint_summary(PDO $db, string $base_url, array $summary): void
     $stmt->execute([$base_url, json_encode($summary, JSON_UNESCAPED_SLASHES), $now]);
 }
 
+function consume_endpoint_rate_limit(PDO $db, string $base_url, int $limit = 9): int
+{
+    $parts = parse_url($base_url);
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    $host = rtrim(strtolower(trim((string)($parts['host'] ?? ''), '[]')), '.');
+    $port = (int)($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+    $target_key = "{$scheme}://{$host}:{$port}";
+    $now = time();
+    $window_started_at = intdiv($now, 60) * 60;
+
+    $db->prepare('DELETE FROM endpoint_rate_limits WHERE window_started_at < ?')
+        ->execute([$window_started_at - 3600]);
+    $stmt = $db->prepare('INSERT INTO endpoint_rate_limits (target_key, window_started_at, request_count)
+        VALUES (?, ?, 1)
+        ON CONFLICT (target_key) DO UPDATE SET
+            request_count = CASE
+                WHEN endpoint_rate_limits.window_started_at = excluded.window_started_at
+                THEN endpoint_rate_limits.request_count + 1 ELSE 1 END,
+            window_started_at = excluded.window_started_at
+        RETURNING request_count');
+    $stmt->execute([$target_key, $window_started_at]);
+
+    return (int)$stmt->fetchColumn() <= $limit ? 0 : max(1, $window_started_at + 60 - $now);
+}
+
 function build_oai_url(string $base_url, array $params): string
 {
     return $base_url . '?' . http_build_query($params);
@@ -272,29 +309,93 @@ function build_oai_url(string $base_url, array $params): string
 
 function fetch_url(string $url): ?string
 {
-    if (function_exists('curl_init')) {
+    if (!function_exists('curl_init')) return null;
+
+    $deadline = microtime(true) + FETCH_TIMEOUT;
+    $downloaded_bytes = 0;
+    for ($redirects = 0; $redirects <= 5; $redirects++) {
+        $target = public_url_target($url);
+        if ($target === null) return null;
+
+        $remaining = (int)ceil($deadline - microtime(true));
+        if ($remaining <= 0) return null;
+
+        $body = '';
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => FETCH_TIMEOUT,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 5,
+        $options = [
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_TIMEOUT => $remaining,
+            CURLOPT_CONNECTTIMEOUT => min(10, $remaining),
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_PROXY => '',
             CURLOPT_USERAGENT => OAI_USER_AGENT,
             CURLOPT_HTTPHEADER => ['Accept: application/xml, text/xml'],
             CURLOPT_SSL_VERIFYPEER => true,
-        ]);
-        $body = curl_exec($ch);
-        curl_close($ch);
-        return ($body !== false && strlen((string)$body) > 0) ? (string)$body : null;
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk) use (&$body, &$downloaded_bytes): int {
+                $downloaded_bytes += strlen($chunk);
+                if ($downloaded_bytes > 10 * 1024 * 1024) return 0;
+                $body .= $chunk;
+                return strlen($chunk);
+            },
+        ];
+        if ($target['resolve'] !== null) $options[CURLOPT_RESOLVE] = [$target['resolve']];
+        curl_setopt_array($ch, $options);
+        $ok = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $redirect_url = (string)curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+
+        if ($ok === false) return null;
+        if ($status >= 300 && $status < 400 && $redirect_url !== '') {
+            $url = $redirect_url;
+            continue;
+        }
+        return $body !== '' ? $body : null;
     }
 
-    $ctx = stream_context_create(['http' => [
-        'timeout' => FETCH_TIMEOUT,
-        'user_agent' => OAI_USER_AGENT,
-        'header' => "Accept: application/xml, text/xml\r\n",
-    ]]);
-    $body = @file_get_contents($url, false, $ctx);
-    return $body !== false ? $body : null;
+    return null;
+}
+
+function public_url_target(string $url): ?array
+{
+    $parts = parse_url($url);
+    if (!is_array($parts) || isset($parts['user']) || isset($parts['pass'])) return null;
+
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    $host = rtrim(strtolower(trim((string)($parts['host'] ?? ''), '[]')), '.');
+    if (!in_array($scheme, ['http', 'https'], true) || $host === '' || preg_match('/[^\x20-\x7e]/', $host)) {
+        return null;
+    }
+
+    $ips = [];
+    $literal_ip = filter_var($host, FILTER_VALIDATE_IP) !== false;
+    if ($literal_ip) {
+        $ips[] = $host;
+    } elseif (filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+        foreach (@dns_get_record($host, DNS_A | DNS_AAAA) ?: [] as $record) {
+            $ip = (string)($record['ip'] ?? $record['ipv6'] ?? '');
+            if ($ip !== '') $ips[] = $ip;
+        }
+    }
+
+    $ips = array_values(array_unique($ips));
+    if ($ips === []) return null;
+    foreach ($ips as $ip) {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return null;
+        }
+    }
+
+    usort($ips, static fn(string $a, string $b): int => (int)str_contains($a, ':') <=> (int)str_contains($b, ':'));
+    $port = (int)($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+    if ($port < 1 || $port > 65535) return null;
+    $resolved_ips = implode(',', array_map(
+        static fn(string $ip): string => str_contains($ip, ':') ? "[{$ip}]" : $ip,
+        $ips
+    ));
+
+    return ['resolve' => $literal_ip ? null : "{$host}:{$port}:{$resolved_ips}"];
 }
 
 function parse_oai_xml(string $raw, string $action): array

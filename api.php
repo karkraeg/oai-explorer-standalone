@@ -49,6 +49,7 @@ if ($action === 'bootstrap') {
 }
 
 if ($action === 'refreshSummary') {
+    enforce_endpoint_rate_limit($db, $base_url);
     try {
         $summary = build_endpoint_summary($base_url);
         if ($db !== null && !$nocache) {
@@ -130,6 +131,7 @@ if ($db !== null && $cacheable && !$nocache) {
     } catch (Throwable $e) {}
 }
 
+enforce_endpoint_rate_limit($db, $base_url);
 $raw = fetch_url($oai_url);
 if ($raw === null) {
     echo json_encode([
@@ -168,6 +170,30 @@ if ($db !== null && $cacheable) {
     try { store_cache($db, $cache_key, $out); } catch (Throwable $e) {}
 }
 echo $out;
+
+function enforce_endpoint_rate_limit(?PDO $db, string $base_url): void
+{
+    if ($db === null) {
+        http_response_code(503);
+        echo json_encode(['ok' => false, 'error' => 'Rate limiter unavailable']);
+        exit;
+    }
+
+    try {
+        $retry_after = consume_endpoint_rate_limit($db, $base_url);
+    } catch (Throwable $e) {
+        http_response_code(503);
+        echo json_encode(['ok' => false, 'error' => 'Rate limiter unavailable']);
+        exit;
+    }
+
+    if ($retry_after > 0) {
+        http_response_code(429);
+        header("Retry-After: {$retry_after}");
+        echo json_encode(['ok' => false, 'error' => 'Rate limit exceeded', 'retryAfter' => $retry_after]);
+        exit;
+    }
+}
 
 function build_list_identifier_params(): array
 {
